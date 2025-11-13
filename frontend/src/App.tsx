@@ -24,7 +24,8 @@ const App: React.FC = () => {
   const [view, setView] = useState<'all' | 'project'>('all');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [meetingNotes, setMeetingNotes] = useState<string>('');
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  // Default to dark mode on per request
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
 
   useEffect(() => {
     fetchTasks();
@@ -126,10 +127,13 @@ const App: React.FC = () => {
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1>Task Manager</h1>
-        <label className="toggle-switch">
-          <input type="checkbox" checked={isDarkMode} onChange={toggleDarkMode} />
-          <span className="slider"></span>
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span className="dark-mode-label">Dark Mode</span>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={isDarkMode} onChange={toggleDarkMode} />
+            <span className="slider"></span>
+          </label>
+        </div>
       </div>
       <div className="view-buttons">
         <button onClick={() => setView('all')}>All Tasks</button>

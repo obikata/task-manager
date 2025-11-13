@@ -1,5 +1,5 @@
 .App {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Grok', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif;
   background-color: #ffffff;
   color: #14171a;
   min-height: 100vh;
@@ -8,8 +8,8 @@
 }
 
 .App.dark {
-  background-color: #000000;
-  color: #ffffff;
+  background-color: #0f1419;
+  color: #e6ecf0;
 }
 
 .task-form {
@@ -24,7 +24,7 @@
 .App.dark .task-form {
   background: #15202b;
   border-color: #38444d;
-  color: #ffffff;
+  color: #e6ecf0;
 }
 
 .task-form h2 {
@@ -167,7 +167,17 @@ input:checked + .slider:before {
 .App.dark .task-card {
   background: #15202b;
   border-color: #38444d;
-  color: #ffffff;
+  color: #e6ecf0;
+}
+
+.dark-mode-label {
+  font-weight: bold;
+  color: inherit;
+  user-select: none;
+}
+
+.App.dark .dark-mode-label {
+  color: #e6ecf0;
 }
 
 .task-card h3 {
