@@ -26,13 +26,13 @@ flowchart TB
 
     subgraph Backend["Backend (Rust)"]
         API["Actix-web API"]
-        State["In-Memory State"]
+        DB[(SQLite)]
     end
 
     Browser -->|":3000"| Vite
     Vite --> UI
     UI -->|"REST /tasks"| API
-    API --> State
+    API --> DB
 ```
 
 ## Prerequisites
@@ -100,6 +100,7 @@ flowchart TB
 ### Environment Variables
 
 - `VITE_API_URL`: API base URL for the frontend (default: `http://127.0.0.1:8080`). Set in `frontend/.env` for custom backends.
+- `DATABASE_URL`: SQLite database URL (default: `sqlite:./data/tasks.db`). The `backend/data/` directory is created automatically.
 - `XAI_API_KEY`: xAI API key for AI task generation. Required for the "Generate Tasks from Meeting Notes (AI)" feature. Create a key at [xAI Console](https://console.x.ai/team/default/api-keys) and set it when running the backend:
   ```bash
   export XAI_API_KEY="your_api_key_here"

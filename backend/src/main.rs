@@ -1,7 +1,8 @@
 use actix_web::{web, App, HttpServer, HttpResponse, Result};
 use actix_cors::Cors;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool};
+use std::path::Path;
 
 const XAI_API_URL: &str = "https://api.x.ai/v1/chat/completions";
 const XAI_MODEL: &str = "grok-3-mini";
@@ -11,7 +12,7 @@ const VALID_STATUSES: [&str; 4] = ["todo", "in_progress", "done", "blocked"];
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Task {
     #[serde(default)]
-    id: u64,
+    id: i64,
     title: String,
     description: String,
     tags: Vec<String>,
@@ -29,14 +30,37 @@ fn default_status() -> String {
 }
 
 struct AppState {
-    tasks: Mutex<Vec<Task>>,
-    next_id: Mutex<u64>,
+    pool: SqlitePool,
 }
 
-async fn get_tasks(data: web::Data<AppState>) -> Result<HttpResponse> {
-    let tasks = data.tasks.lock().unwrap();
-    println!("Getting tasks: {:?}", *tasks);
-    Ok(HttpResponse::Ok().json(&*tasks))
+async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            tags TEXT NOT NULL,
+            deadline TEXT,
+            project TEXT NOT NULL,
+            assignee TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'todo',
+            in_sprint INTEGER NOT NULL DEFAULT 0
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("PRAGMA busy_timeout=5000")
+        .execute(pool)
+        .await?;
+
+    Ok(())
 }
 
 fn validate_task(task: &Task) -> Option<&'static str> {
@@ -63,53 +87,140 @@ fn validate_task(task: &Task) -> Option<&'static str> {
     None
 }
 
+async fn get_tasks(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let rows = sqlx::query_as::<_, TaskRow>(
+        "SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint FROM tasks ORDER BY id",
+    )
+    .fetch_all(&data.pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let tasks: Vec<Task> = rows
+        .into_iter()
+        .map(|r| r.into_task())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().json(tasks))
+}
+
+#[derive(sqlx::FromRow)]
+struct TaskRow {
+    id: i64,
+    title: String,
+    description: String,
+    tags: String,
+    deadline: Option<String>,
+    project: String,
+    assignee: String,
+    status: String,
+    in_sprint: i32,
+}
+
+impl TaskRow {
+    fn into_task(self) -> Result<Task, serde_json::Error> {
+        let tags: Vec<String> = if self.tags.is_empty() {
+            Vec::new()
+        } else {
+            serde_json::from_str(&self.tags)?
+        };
+        Ok(Task {
+            id: self.id,
+            title: self.title,
+            description: self.description,
+            tags,
+            deadline: self.deadline,
+            project: self.project,
+            assignee: self.assignee,
+            status: self.status,
+            in_sprint: self.in_sprint != 0,
+        })
+    }
+}
+
 async fn create_task(
     data: web::Data<AppState>,
     task: web::Json<Task>,
 ) -> Result<HttpResponse> {
     let mut task_inner = task.into_inner();
+    task_inner.id = 0;
     if task_inner.status.is_empty() || !VALID_STATUSES.contains(&task_inner.status.as_str()) {
         task_inner.status = "todo".to_string();
     }
-    task_inner.in_sprint = false; // New tasks go to Backlog
+    task_inner.in_sprint = false;
     if let Some(msg) = validate_task(&task_inner) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
     }
-    let mut tasks = data.tasks.lock().unwrap();
-    let mut next_id = data.next_id.lock().unwrap();
+
+    let tags_json = serde_json::to_string(&task_inner.tags)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO tasks (title, description, tags, deadline, project, assignee, status, in_sprint)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        RETURNING id
+        "#,
+    )
+    .bind(&task_inner.title)
+    .bind(&task_inner.description)
+    .bind(&tags_json)
+    .bind(&task_inner.deadline)
+    .bind(&task_inner.project)
+    .bind(&task_inner.assignee)
+    .bind(&task_inner.status)
+    .fetch_one(&data.pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+
     let new_task = Task {
-        id: *next_id,
+        id,
         ..task_inner
     };
-    *next_id += 1;
-    println!("Creating task: {:?}", new_task);
-    tasks.push(new_task.clone());
     Ok(HttpResponse::Created().json(new_task))
 }
 
 async fn update_task(
     data: web::Data<AppState>,
-    path: web::Path<u64>,
+    path: web::Path<i64>,
     task: web::Json<Task>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
     if let Some(msg) = validate_task(&task) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
     }
-    let mut tasks = data.tasks.lock().unwrap();
-    if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
-        t.title = task.title.clone();
-        t.description = task.description.clone();
-        t.tags = task.tags.clone();
-        t.deadline = task.deadline.clone();
-        t.project = task.project.clone();
-        t.assignee = task.assignee.clone();
-        t.status = task.status.clone();
-        t.in_sprint = task.in_sprint;
-        Ok(HttpResponse::Ok().json(t.clone()))
-    } else {
-        Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
+
+    let tags_json = serde_json::to_string(&task.tags)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let result = sqlx::query(
+        r#"
+        UPDATE tasks SET title=?, description=?, tags=?, deadline=?, project=?, assignee=?, status=?, in_sprint=?
+        WHERE id=?
+        "#,
+    )
+    .bind(&task.title)
+    .bind(&task.description)
+    .bind(&tags_json)
+    .bind(&task.deadline)
+    .bind(&task.project)
+    .bind(&task.assignee)
+    .bind(&task.status)
+    .bind(if task.in_sprint { 1 } else { 0 })
+    .bind(id)
+    .execute(&data.pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
+
+    let updated = Task {
+        id,
+        ..task.into_inner()
+    };
+    Ok(HttpResponse::Ok().json(updated))
 }
 
 #[derive(Deserialize)]
@@ -119,17 +230,29 @@ struct UpdateSprintRequest {
 
 async fn update_task_sprint(
     data: web::Data<AppState>,
-    path: web::Path<u64>,
+    path: web::Path<i64>,
     body: web::Json<UpdateSprintRequest>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
-    let mut tasks = data.tasks.lock().unwrap();
-    if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
-        t.in_sprint = body.in_sprint;
-        Ok(HttpResponse::Ok().json(t.clone()))
-    } else {
-        Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
+    let result = sqlx::query("UPDATE tasks SET in_sprint=? WHERE id=?")
+        .bind(if body.in_sprint { 1 } else { 0 })
+        .bind(id)
+        .execute(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
+
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint FROM tasks WHERE id=?")
+        .bind(id)
+        .fetch_one(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let task = row.into_task().map_err(actix_web::error::ErrorInternalServerError)?;
+    Ok(HttpResponse::Ok().json(task))
 }
 
 #[derive(Deserialize)]
@@ -139,34 +262,50 @@ struct UpdateStatusRequest {
 
 async fn update_task_status(
     data: web::Data<AppState>,
-    path: web::Path<u64>,
+    path: web::Path<i64>,
     body: web::Json<UpdateStatusRequest>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
     if !VALID_STATUSES.contains(&body.status.as_str()) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "invalid status" })));
     }
-    let mut tasks = data.tasks.lock().unwrap();
-    if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
-        t.status = body.status.clone();
-        Ok(HttpResponse::Ok().json(t.clone()))
-    } else {
-        Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
+
+    let result = sqlx::query("UPDATE tasks SET status=? WHERE id=?")
+        .bind(&body.status)
+        .bind(id)
+        .execute(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
+
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint FROM tasks WHERE id=?")
+        .bind(id)
+        .fetch_one(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let task = row.into_task().map_err(actix_web::error::ErrorInternalServerError)?;
+    Ok(HttpResponse::Ok().json(task))
 }
 
 async fn delete_task(
     data: web::Data<AppState>,
-    path: web::Path<u64>,
+    path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
-    let mut tasks = data.tasks.lock().unwrap();
-    if let Some(pos) = tasks.iter().position(|t| t.id == id) {
-        tasks.remove(pos);
-        Ok(HttpResponse::NoContent().finish())
-    } else {
-        Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
+    let result = sqlx::query("DELETE FROM tasks WHERE id=?")
+        .bind(id)
+        .execute(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
+    Ok(HttpResponse::NoContent().finish())
 }
 
 #[derive(Deserialize)]
@@ -324,9 +463,6 @@ Example output:
     })?;
 
     let mut created = Vec::new();
-    let mut tasks = data.tasks.lock().unwrap();
-    let mut next_id = data.next_id.lock().unwrap();
-
     for item in generated {
         let title = item
             .get("title")
@@ -370,7 +506,7 @@ Example output:
             .to_string();
 
         let task = Task {
-            id: *next_id,
+            id: 0,
             title: title.clone(),
             description: description.clone(),
             tags: tags.clone(),
@@ -382,9 +518,37 @@ Example output:
         };
 
         if validate_task(&task).is_none() {
-            *next_id += 1;
-            tasks.push(task.clone());
-            created.push(task);
+            let tags_json = serde_json::to_string(&tags)
+                .map_err(actix_web::error::ErrorInternalServerError)?;
+            let id = sqlx::query_scalar::<_, i64>(
+                r#"
+                INSERT INTO tasks (title, description, tags, deadline, project, assignee, status, in_sprint)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                RETURNING id
+                "#,
+            )
+            .bind(&title)
+            .bind(&description)
+            .bind(&tags_json)
+            .bind(&deadline)
+            .bind(&project)
+            .bind(&assignee)
+            .bind(&status)
+            .fetch_one(&data.pool)
+            .await
+            .map_err(actix_web::error::ErrorInternalServerError)?;
+
+            created.push(Task {
+                id,
+                title,
+                description,
+                tags,
+                deadline,
+                project,
+                assignee,
+                status,
+                in_sprint: false,
+            });
         }
     }
 
@@ -393,10 +557,32 @@ Example output:
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let app_state = web::Data::new(AppState {
-        tasks: Mutex::new(Vec::new()),
-        next_id: Mutex::new(1),
-    });
+    let pool = match std::env::var("DATABASE_URL") {
+        Ok(url) => SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&url)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to connect to database: {}", e)),
+        Err(_) => {
+            let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+            let data_dir = manifest_dir.join("data");
+            std::fs::create_dir_all(&data_dir)
+                .unwrap_or_else(|e| panic!("Failed to create data directory: {}", e));
+            let db_file = data_dir.join("tasks.db");
+            let connect_opts = SqliteConnectOptions::new()
+                .filename(&db_file)
+                .create_if_missing(true);
+            SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect_with(connect_opts)
+                .await
+                .unwrap_or_else(|e| panic!("Failed to connect to database: {}", e))
+        }
+    };
+
+    init_db(&pool).await.expect("Failed to initialize database");
+
+    let app_state = web::Data::new(AppState { pool });
 
     HttpServer::new(move || {
         let cors = Cors::default()
