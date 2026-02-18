@@ -60,10 +60,10 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ label, options, s
 };
 
 const TASK_STATUSES = [
-  { value: 'todo', label: 'Todo' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
-  { value: 'blocked', label: 'Blocked' },
+  { value: 'todo', label: 'TO DO' },
+  { value: 'in_progress', label: 'IN PROGRESS' },
+  { value: 'done', label: 'DONE' },
+  { value: 'blocked', label: 'BLOCKED' },
 ] as const;
 
 type TaskStatus = (typeof TASK_STATUSES)[number]['value'];
@@ -497,7 +497,7 @@ const App: React.FC = () => {
           <p className="empty-state-message">No tasks found</p>
         )}
         {!loading && filteredTasks.length > 0 && filteredTasks.map((task) => (
-          <div key={task.id} className="task-card">
+          <div key={task.id} className={`task-card status-${editingTaskId === task.id && editingTask ? (editingTask.status ?? 'todo') : (task.status || 'todo')}`}>
             {editingTaskId === task.id && editingTask ? (
               <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
                 <input
@@ -576,7 +576,7 @@ const App: React.FC = () => {
                 <div className="task-card-header">
                   <h3>{task.title}</h3>
                   <select
-                    className={`status-select status-${task.status || 'todo'}`}
+                    className="status-select"
                     value={task.status || 'todo'}
                     onChange={(e) => handleStatusChange(task.id, e.target.value)}
                     title="Change status"
