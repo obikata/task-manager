@@ -36,6 +36,28 @@ struct AppState {
 async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS assignees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -52,6 +74,19 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
+    sqlx::query("INSERT OR IGNORE INTO projects (id, name) VALUES (1, 'General')")
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT OR IGNORE INTO assignees (id, name) VALUES (1, 'Unassigned')")
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT OR IGNORE INTO projects (name) SELECT DISTINCT trim(project) FROM tasks WHERE trim(project) != ''")
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT OR IGNORE INTO assignees (name) SELECT DISTINCT trim(assignee) FROM tasks WHERE trim(assignee) != ''")
+        .execute(pool)
+        .await?;
+
     sqlx::query("PRAGMA journal_mode=WAL")
         .execute(pool)
         .await?;
@@ -61,6 +96,136 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await?;
 
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, sqlx::FromRow)]
+struct Project {
+    id: i64,
+    name: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, sqlx::FromRow)]
+struct Assignee {
+    id: i64,
+    name: String,
+}
+
+async fn get_projects(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let projects = sqlx::query_as::<_, Project>("SELECT id, name FROM projects ORDER BY name")
+        .fetch_all(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    Ok(HttpResponse::Ok().json(projects))
+}
+
+#[derive(Deserialize)]
+struct CreateProjectRequest {
+    name: String,
+}
+
+async fn create_project(
+    data: web::Data<AppState>,
+    body: web::Json<CreateProjectRequest>,
+) -> Result<HttpResponse> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "name must not be empty" })));
+    }
+    let id = sqlx::query_scalar::<_, i64>("INSERT INTO projects (name) VALUES (?) RETURNING id")
+        .bind(name)
+        .fetch_one(&data.pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db) = &e {
+                if db.message().contains("UNIQUE") {
+                    return actix_web::error::ErrorBadRequest("project already exists");
+                }
+            }
+            actix_web::error::ErrorInternalServerError(e)
+        })?;
+    let project = Project {
+        id,
+        name: name.to_string(),
+    };
+    Ok(HttpResponse::Created().json(project))
+}
+
+async fn delete_project(
+    data: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let id = path.into_inner();
+    if id == 1 {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "cannot delete default project 'General'" })));
+    }
+    let result = sqlx::query("DELETE FROM projects WHERE id=?")
+        .bind(id)
+        .execute(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "project not found" })));
+    }
+    Ok(HttpResponse::NoContent().finish())
+}
+
+async fn get_assignees(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let assignees = sqlx::query_as::<_, Assignee>("SELECT id, name FROM assignees ORDER BY name")
+        .fetch_all(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    Ok(HttpResponse::Ok().json(assignees))
+}
+
+#[derive(Deserialize)]
+struct CreateAssigneeRequest {
+    name: String,
+}
+
+async fn create_assignee(
+    data: web::Data<AppState>,
+    body: web::Json<CreateAssigneeRequest>,
+) -> Result<HttpResponse> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "name must not be empty" })));
+    }
+    let id = sqlx::query_scalar::<_, i64>("INSERT INTO assignees (name) VALUES (?) RETURNING id")
+        .bind(name)
+        .fetch_one(&data.pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db) = &e {
+                if db.message().contains("UNIQUE") {
+                    return actix_web::error::ErrorBadRequest("assignee already exists");
+                }
+            }
+            actix_web::error::ErrorInternalServerError(e)
+        })?;
+    let assignee = Assignee {
+        id,
+        name: name.to_string(),
+    };
+    Ok(HttpResponse::Created().json(assignee))
+}
+
+async fn delete_assignee(
+    data: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let id = path.into_inner();
+    if id == 1 {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "cannot delete default assignee 'Unassigned'" })));
+    }
+    let result = sqlx::query("DELETE FROM assignees WHERE id=?")
+        .bind(id)
+        .execute(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "assignee not found" })));
+    }
+    Ok(HttpResponse::NoContent().finish())
 }
 
 fn validate_task(task: &Task) -> Option<&'static str> {
@@ -84,7 +249,29 @@ fn validate_task(task: &Task) -> Option<&'static str> {
     if !VALID_STATUSES.contains(&task.status.as_str()) {
         return Some("status must be one of: todo, in_progress, done, blocked");
     }
+    if task.project.trim().is_empty() {
+        return Some("project must not be empty");
+    }
+    if task.assignee.trim().is_empty() {
+        return Some("assignee must not be empty");
+    }
     None
+}
+
+async fn project_exists(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Error> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM projects WHERE name = ?")
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some())
+}
+
+async fn assignee_exists(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Error> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM assignees WHERE name = ?")
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some())
 }
 
 async fn get_tasks(data: web::Data<AppState>) -> Result<HttpResponse> {
@@ -151,6 +338,18 @@ async fn create_task(
     if let Some(msg) = validate_task(&task_inner) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
     }
+    if !project_exists(&data.pool, &task_inner.project)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?
+    {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "project does not exist" })));
+    }
+    if !assignee_exists(&data.pool, &task_inner.assignee)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?
+    {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "assignee does not exist" })));
+    }
 
     let tags_json = serde_json::to_string(&task_inner.tags)
         .map_err(actix_web::error::ErrorInternalServerError)?;
@@ -188,6 +387,18 @@ async fn update_task(
     let id = path.into_inner();
     if let Some(msg) = validate_task(&task) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
+    }
+    if !project_exists(&data.pool, &task.project)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?
+    {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "project does not exist" })));
+    }
+    if !assignee_exists(&data.pool, &task.assignee)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?
+    {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "assignee does not exist" })));
     }
 
     let tags_json = serde_json::to_string(&task.tags)
@@ -488,16 +699,26 @@ Example output:
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(String::from);
-        let project = item
+        let project_raw = item
             .get("project")
             .and_then(|v| v.as_str())
             .unwrap_or("General")
             .to_string();
-        let assignee = item
+        let assignee_raw = item
             .get("assignee")
             .and_then(|v| v.as_str())
             .unwrap_or("Unassigned")
             .to_string();
+        let project = if project_exists(&data.pool, &project_raw).await.unwrap_or(false) {
+            project_raw.clone()
+        } else {
+            "General".to_string()
+        };
+        let assignee = if assignee_exists(&data.pool, &assignee_raw).await.unwrap_or(false) {
+            assignee_raw.clone()
+        } else {
+            "Unassigned".to_string()
+        };
         let status = item
             .get("status")
             .and_then(|v| v.as_str())
@@ -593,6 +814,12 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .app_data(app_state.clone())
+            .route("/projects", web::get().to(get_projects))
+            .route("/projects", web::post().to(create_project))
+            .route("/projects/{id}", web::delete().to(delete_project))
+            .route("/assignees", web::get().to(get_assignees))
+            .route("/assignees", web::post().to(create_assignee))
+            .route("/assignees/{id}", web::delete().to(delete_assignee))
             .route("/tasks", web::get().to(get_tasks))
             .route("/tasks", web::post().to(create_task))
             .route("/tasks/generate", web::post().to(generate_tasks_from_ai))

@@ -135,12 +135,40 @@ const App: React.FC = () => {
   });
   const [openAddTask, setOpenAddTask] = useState(false);
   const [openAiGenerate, setOpenAiGenerate] = useState(false);
+  const [projects, setProjects] = useState<{ id: number; name: string }[]>([]);
+  const [assignees, setAssignees] = useState<{ id: number; name: string }[]>([]);
+
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080';
 
   useEffect(() => {
     fetchTasks();
+    fetchProjects();
+    fetchAssignees();
   }, []);
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080';
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/projects`);
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data);
+      }
+    } catch (err) {
+      console.error('Error fetching projects:', err);
+    }
+  };
+
+  const fetchAssignees = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/assignees`);
+      if (response.ok) {
+        const data = await response.json();
+        setAssignees(data);
+      }
+    } catch (err) {
+      console.error('Error fetching assignees:', err);
+    }
+  };
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -349,8 +377,8 @@ const App: React.FC = () => {
     });
   };
 
-  const projects = Array.from(new Set(['General', ...tasks.map(t => t.project).filter(p => p && p.trim())])).sort();
-  const assignees = Array.from(new Set(['Unassigned', ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
+  const projectNames = Array.from(new Set([...projects.map(p => p.name), ...tasks.map(t => t.project).filter(p => p && p.trim())])).sort();
+  const assigneeNames = Array.from(new Set([...assignees.map(a => a.name), ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
   const tags = Array.from(new Set(tasks.flatMap(t => t.tags).filter(t => t && t.trim()))).sort();
   const statusLabels = TASK_STATUSES.map(s => s.label);
   const STATUS_ORDER = ['todo', 'in_progress', 'blocked', 'done'];
@@ -502,8 +530,8 @@ const App: React.FC = () => {
                   value={editingTask.project ?? ''}
                   onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
                 >
-                  <option value="">All</option>
-                  {Array.from(new Set([...(editingTask.project && !projects.includes(editingTask.project) ? [editingTask.project] : []), ...projects])).sort().map((p) => (
+                  <option value="">Select project</option>
+                  {Array.from(new Set([...(editingTask.project && !projectNames.includes(editingTask.project) ? [editingTask.project] : []), ...projectNames])).sort().map((p) => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
@@ -514,8 +542,8 @@ const App: React.FC = () => {
                   value={editingTask.assignee ?? ''}
                   onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
                 >
-                  <option value="">All</option>
-                  {Array.from(new Set([...(editingTask.assignee && !assignees.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assignees])).sort().map((a) => (
+                  <option value="">Select assignee</option>
+                  {Array.from(new Set([...(editingTask.assignee && !assigneeNames.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assigneeNames])).sort().map((a) => (
                     <option key={a} value={a}>{a}</option>
                   ))}
                 </select>
@@ -552,8 +580,8 @@ const App: React.FC = () => {
         </div>
       </div>
       <div className="filter-bar">
-        <MultiSelectFilter label="Project" options={projects} selected={filterProject} onChange={setFilterProject} />
-        <MultiSelectFilter label="Assignee" options={assignees} selected={filterAssignee} onChange={setFilterAssignee} />
+        <MultiSelectFilter label="Project" options={projectNames} selected={filterProject} onChange={setFilterProject} />
+        <MultiSelectFilter label="Assignee" options={assigneeNames} selected={filterAssignee} onChange={setFilterAssignee} />
         <MultiSelectFilter label="Tag" options={tags} selected={filterTags} onChange={setFilterTags} />
         <MultiSelectFilter label="Status" options={statusLabels} selected={filterStatus} onChange={setFilterStatus} />
         <button
@@ -624,27 +652,15 @@ const App: React.FC = () => {
             <label htmlFor="new-project">Project</label>
             <select
               id="new-project"
-              value={projects.includes(newTask.project) ? newTask.project : (newTask.project ? '__new__' : '')}
-              onChange={(e) => {
-                const v = e.target.value;
-                setNewTask({ ...newTask, project: v === '__new__' ? ' ' : v });
-              }}
+              value={newTask.project}
+              onChange={(e) => setNewTask({ ...newTask, project: e.target.value })}
+              required
             >
               <option value="">Select project</option>
               {projects.map((p) => (
-                <option key={p} value={p}>{p}</option>
+                <option key={p.id} value={p.name}>{p.name}</option>
               ))}
-              <option value="__new__">+ New</option>
             </select>
-            {(!newTask.project || projects.includes(newTask.project)) ? null : (
-              <input
-                type="text"
-                placeholder="New project name"
-                value={newTask.project}
-                onChange={(e) => setNewTask({ ...newTask, project: e.target.value })}
-                style={{ marginTop: 4 }}
-              />
-            )}
           </div>
           <div>
             <label htmlFor="new-status">Status</label>
@@ -662,27 +678,15 @@ const App: React.FC = () => {
             <label htmlFor="new-assignee">Assignee</label>
             <select
               id="new-assignee"
-              value={assignees.includes(newTask.assignee) ? newTask.assignee : (newTask.assignee ? '__new__' : '')}
-              onChange={(e) => {
-                const v = e.target.value;
-                setNewTask({ ...newTask, assignee: v === '__new__' ? ' ' : v });
-              }}
+              value={newTask.assignee}
+              onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
+              required
             >
               <option value="">Select assignee</option>
               {assignees.map((a) => (
-                <option key={a} value={a}>{a}</option>
+                <option key={a.id} value={a.name}>{a.name}</option>
               ))}
-              <option value="__new__">+ New</option>
             </select>
-            {(!newTask.assignee || assignees.includes(newTask.assignee)) ? null : (
-              <input
-                type="text"
-                placeholder="New assignee name"
-                value={newTask.assignee}
-                onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
-                style={{ marginTop: 4 }}
-              />
-            )}
           </div>
           <button type="submit">Add</button>
         </form>

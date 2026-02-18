@@ -106,3 +106,43 @@ flowchart TB
   export XAI_API_KEY="your_api_key_here"
   cargo run
   ```
+
+### Managing Projects and Assignees
+
+Projects and assignees are managed via the API. Users can only select from the predefined list when creating or editing tasks. Use `curl` or similar to add new entries.
+
+**Add a new project:**
+```bash
+curl -X POST http://127.0.0.1:8080/projects \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Backend"}'
+```
+
+**List projects:**
+```bash
+curl http://127.0.0.1:8080/projects
+```
+
+**Delete a project** (cannot delete "General", id=1):
+```bash
+curl -X DELETE http://127.0.0.1:8080/projects/2
+```
+
+**Add a new assignee:**
+```bash
+curl -X POST http://127.0.0.1:8080/assignees \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice"}'
+```
+
+**List assignees:**
+```bash
+curl http://127.0.0.1:8080/assignees
+```
+
+**Delete an assignee** (cannot delete "Unassigned", id=1):
+```bash
+curl -X DELETE http://127.0.0.1:8080/assignees/2
+```
+
+Tags remain free-form; users can add any tag when creating or editing tasks.
