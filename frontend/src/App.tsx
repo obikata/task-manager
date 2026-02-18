@@ -379,24 +379,36 @@ const App: React.FC = () => {
       <div className="task-form">
         <h2>Add New Task</h2>
         <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            placeholder="Title"
-            value={newTask.title}
-            onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-            required
-          />
-          <textarea
-            placeholder="Description"
-            value={newTask.description}
-            onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Tags (comma separated)"
-            value={newTask.tags}
-            onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
-          />
+          <div>
+            <label htmlFor="new-title">Title</label>
+            <input
+              id="new-title"
+              type="text"
+              placeholder="Enter title"
+              value={newTask.title}
+              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="new-description">Description</label>
+            <textarea
+              id="new-description"
+              placeholder="Enter description"
+              value={newTask.description}
+              onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="new-tags">Tags</label>
+            <input
+              id="new-tags"
+              type="text"
+              placeholder="Comma separated"
+              value={newTask.tags}
+              onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
+            />
+          </div>
           <div>
             <label htmlFor="new-deadline">Deadline</label>
             <DatePicker
@@ -478,13 +490,17 @@ const App: React.FC = () => {
       </div>
       <div className="task-form">
         <h2>Generate Tasks from Meeting Notes (AI)</h2>
-        <textarea
-          placeholder="Paste meeting notes or text here. xAI (Grok) will extract tasks automatically..."
-          value={meetingNotes}
-          onChange={(e) => setMeetingNotes(e.target.value)}
-          rows={5}
-          disabled={generating}
-        />
+        <div>
+          <label htmlFor="meeting-notes">Meeting notes</label>
+          <textarea
+            id="meeting-notes"
+            placeholder="Paste meeting notes or text here"
+            value={meetingNotes}
+            onChange={(e) => setMeetingNotes(e.target.value)}
+            rows={5}
+            disabled={generating}
+          />
+        </div>
         <button onClick={generateTasksFromNotes} disabled={generating}>
           {generating ? 'Generating...' : 'Generate Tasks with AI'}
         </button>
@@ -500,24 +516,33 @@ const App: React.FC = () => {
           <div key={task.id} className={`task-card status-${editingTaskId === task.id && editingTask ? (editingTask.status ?? 'todo') : (task.status || 'todo')}`}>
             {editingTaskId === task.id && editingTask ? (
               <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
-                <input
-                  type="text"
-                  placeholder="Title"
-                  value={editingTask.title ?? ''}
-                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
-                  required
-                />
-                <textarea
-                  placeholder="Description"
-                  value={editingTask.description ?? ''}
-                  onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
-                />
-                <input
-                  type="text"
-                  placeholder="Tags (comma separated)"
-                  value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
-                  onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
-                />
+                <div>
+                  <label className="filter-label-text">Title</label>
+                  <input
+                    type="text"
+                    placeholder="Enter title"
+                    value={editingTask.title ?? ''}
+                    onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="filter-label-text">Description</label>
+                  <textarea
+                    placeholder="Enter description"
+                    value={editingTask.description ?? ''}
+                    onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="filter-label-text">Tags</label>
+                  <input
+                    type="text"
+                    placeholder="Comma separated"
+                    value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
+                    onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
+                  />
+                </div>
                 <div>
                   <label className="filter-label-text">Deadline</label>
                   <DatePicker

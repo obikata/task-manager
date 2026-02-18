@@ -1,5 +1,5 @@
 .App {
-  font-family: 'Grok', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif;
+  font-family: var(--app-font, 'Grok', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif);
   background-color: #ffffff;
   color: #14171a;
   min-height: 100vh;
@@ -83,6 +83,29 @@ h1 {
   border-color: #555;
 }
 
+/* Unified placeholder styling */
+.task-form input::placeholder,
+.task-form textarea::placeholder {
+  color: #999;
+  opacity: 1;
+}
+
+.App.dark .task-form input::placeholder,
+.App.dark .task-form textarea::placeholder {
+  color: #888;
+}
+
+.task-edit-form input::placeholder,
+.task-edit-form textarea::placeholder {
+  color: #999;
+  opacity: 1;
+}
+
+.App.dark .task-edit-form input::placeholder,
+.App.dark .task-edit-form textarea::placeholder {
+  color: #888;
+}
+
 /* DatePicker - hide clear button (blue blob and ×) */
 .react-datepicker__close-icon {
   display: none !important;
@@ -112,6 +135,11 @@ h1 {
   background-color: #2a2a2a;
   color: #ffffff;
   border-color: #555;
+}
+
+/* DatePicker popup - use app font (renders in portal outside App) */
+.react-datepicker {
+  font-family: var(--app-font, 'Grok', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif) !important;
 }
 
 /* DatePicker popup dark mode */
@@ -563,14 +591,34 @@ input:checked + .slider:before {
   background: #c82333;
 }
 
+.task-edit-form .filter-label-text,
+.task-edit-form label {
+  display: block;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: #666;
+}
+
+.App.dark .task-edit-form .filter-label-text,
+.App.dark .task-edit-form label {
+  color: #aaa;
+}
+
+.task-edit-form .filter-label-text:first-child,
+.task-edit-form > div:first-child label {
+  margin-top: 0;
+}
+
 .task-edit-form input,
 .task-edit-form textarea {
   width: 100%;
-  padding: 8px;
-  margin: 4px 0;
+  padding: 10px;
+  margin: 4px 0 10px 0;
   border: 1px solid #ddd;
   border-radius: 4px;
   box-sizing: border-box;
+  font-size: 16px;
 }
 
 .App.dark .task-edit-form input,
