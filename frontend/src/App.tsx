@@ -86,7 +86,7 @@ const App: React.FC = () => {
 
   const generateTasksFromNotes = () => {
     const lines = meetingNotes.split('\n').filter(line => line.trim());
-    const generatedTasks = lines.map((line, index) => ({
+    const generatedTasks = lines.map((line) => ({
       title: line.trim(),
       description: `Generated from meeting notes: ${line.trim()}`,
       tags: ['meeting'],
@@ -200,8 +200,8 @@ const App: React.FC = () => {
             <h3>{task.title}</h3>
             <p>{task.description}</p>
             <div className="tags">
-              {task.tags.map((tag, index) => (
-                <span key={index} className="tag">{tag}</span>
+              {task.tags.map((tag, i) => (
+                <span key={i} className="tag">{tag}</span>
               ))}
             </div>
             {task.deadline && <p className="deadline">Deadline: {task.deadline}</p>}

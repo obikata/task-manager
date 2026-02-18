@@ -44,7 +44,7 @@ A full-stack task management application with Rust backend and React frontend.
 
 3. Start the development server:
    ```
-   npm start
+   npm run dev
    ```
 
 ## Usage
