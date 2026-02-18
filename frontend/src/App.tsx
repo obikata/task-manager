@@ -125,6 +125,7 @@ const App: React.FC = () => {
 
   return (
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
+      <div className="app-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1>Task Manager</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -213,6 +214,7 @@ const App: React.FC = () => {
             <p>Assignee: {task.assignee}</p>
           </div>
         ))}
+      </div>
       </div>
     </div>
   );

@@ -3,8 +3,14 @@
   background-color: #ffffff;
   color: #14171a;
   min-height: 100vh;
-  padding: 20px;
+  padding: 24px;
   transition: background-color 0.3s, color 0.3s;
+}
+
+/* コンテンツを中央に配置し、適切な幅に制限（一般的なWebアプリのUI/UX） */
+.app-container {
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 .App.dark {
@@ -45,6 +51,7 @@ h1 {
 .task-form input,
 .task-form textarea,
 .task-form select {
+  box-sizing: border-box;
   width: 100%;
   padding: 10px;
   margin: 10px 0;
