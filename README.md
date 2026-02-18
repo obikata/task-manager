@@ -94,5 +94,9 @@ flowchart TB
 
 ## Usage
 
-- Backend runs on http://localhost:8080
+- Backend runs on http://127.0.0.1:8080 (or http://localhost:8080)
 - Frontend runs on http://localhost:3000
+
+### Environment Variables
+
+- `VITE_API_URL`: API base URL for the frontend (default: `http://127.0.0.1:8080`). Set in `frontend/.env` for custom backends.

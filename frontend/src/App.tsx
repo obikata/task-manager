@@ -24,22 +24,41 @@ const App: React.FC = () => {
   const [view, setView] = useState<'all' | 'project'>('all');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [meetingNotes, setMeetingNotes] = useState<string>('');
-  // Default to dark mode on per request
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [editingTask, setEditingTask] = useState<Partial<Task> | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('darkMode');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     fetchTasks();
   }, []);
 
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080';
+
   const fetchTasks = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      console.log('Fetching tasks...');
-      const response = await fetch('http://127.0.0.1:8080/tasks');
+      const response = await fetch(`${API_BASE}/tasks`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch tasks: ${response.status} ${response.statusText}`);
+      }
       const data = await response.json();
-      console.log('Fetched tasks:', data);
       setTasks(data);
-    } catch (error) {
-      console.error('Error fetching tasks:', error);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch tasks';
+      setError(msg);
+      console.error('Error fetching tasks:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,16 +76,15 @@ const App: React.FC = () => {
       tags,
       deadline: newTask.deadline || undefined,
     };
+    setError(null);
     try {
-      console.log('Sending task:', task);
-      const response = await fetch('http://127.0.0.1:8080/tasks', {
+      const response = await fetch(`${API_BASE}/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(task),
       });
-      console.log('Response status:', response.status);
       if (response.ok) {
         await fetchTasks();
         setNewTask({
@@ -78,14 +96,17 @@ const App: React.FC = () => {
           assignee: '',
         });
       } else {
-        console.error('Failed to create task:', response.statusText);
+        const text = await response.text();
+        throw new Error(`Failed to create task: ${response.status} ${text || response.statusText}`);
       }
-    } catch (error) {
-      console.error('Error creating task:', error);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create task';
+      setError(msg);
+      console.error('Error creating task:', err);
     }
   };
 
-  const generateTasksFromNotes = () => {
+  const generateTasksFromNotes = async () => {
     const lines = meetingNotes.split('\n').filter(line => line.trim());
     const generatedTasks = lines.map((line) => ({
       title: line.trim(),
@@ -95,29 +116,94 @@ const App: React.FC = () => {
       project: 'General',
       assignee: 'Unassigned',
     }));
-    // 提案を表示するか、直接追加
-    // ここでは直接追加
-    generatedTasks.forEach(async (task) => {
-      try {
-        const response = await fetch('http://127.0.0.1:8080/tasks', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(task),
-        });
-        if (response.ok) {
-          await fetchTasks();
-        }
-      } catch (error) {
-        console.error('Error generating task:', error);
+    setError(null);
+    try {
+      const results = await Promise.allSettled(
+        generatedTasks.map((task) =>
+          fetch(`${API_BASE}/tasks`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(task),
+          })
+        )
+      );
+      const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok));
+      if (failed.length > 0) {
+        setError(`Failed to create ${failed.length} of ${generatedTasks.length} tasks from meeting notes`);
       }
+      await fetchTasks();
+      setMeetingNotes('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate tasks from meeting notes';
+      setError(msg);
+      console.error('Error generating task:', err);
+    }
+  };
+
+  const handleUpdateTask = async (e: React.FormEvent, taskId: number) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...editingTask,
+          id: taskId,
+          tags: Array.isArray(editingTask.tags) ? editingTask.tags : String(editingTask.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
+        }),
+      });
+      if (response.ok) {
+        await fetchTasks();
+        setEditingTaskId(null);
+        setEditingTask(null);
+      } else {
+        const text = await response.text();
+        throw new Error(`Failed to update task: ${response.status} ${text || response.statusText}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update task';
+      setError(msg);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    if (!window.confirm('このタスクを削除しますか？')) return;
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
+      if (response.ok || response.status === 204) {
+        await fetchTasks();
+      } else {
+        throw new Error(`Failed to delete task: ${response.status}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete task';
+      setError(msg);
+    }
+  };
+
+  const startEditing = (task: Task) => {
+    setEditingTaskId(task.id);
+    setEditingTask({
+      ...task,
+      tags: task.tags,
     });
-    setMeetingNotes('');
   };
 
   const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
+    setIsDarkMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('darkMode', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   };
 
   const projects = Array.from(new Set(tasks.map(task => task.project)));
@@ -126,6 +212,12 @@ const App: React.FC = () => {
   return (
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
       <div className="app-container">
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+          <button type="button" onClick={() => setError(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1>Task Manager</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -200,18 +292,77 @@ const App: React.FC = () => {
         <button onClick={generateTasksFromNotes}>Generate Tasks</button>
       </div>
       <div className="task-list">
-        {filteredTasks.map((task) => (
+        {view === 'project' && selectedProject === '' && (
+          <p className="empty-state-message">プロジェクトを選択してください</p>
+        )}
+        {loading && tasks.length === 0 && (
+          <p className="loading-message">読み込み中...</p>
+        )}
+        {!loading && view === 'project' && selectedProject !== '' && filteredTasks.length === 0 && (
+          <p className="empty-state-message">このプロジェクトにタスクはありません</p>
+        )}
+        {!loading && (view === 'all' || (view === 'project' && selectedProject !== '')) && filteredTasks.map((task) => (
           <div key={task.id} className="task-card">
-            <h3>{task.title}</h3>
-            <p>{task.description}</p>
-            <div className="tags">
-              {task.tags.map((tag, i) => (
-                <span key={i} className="tag">{tag}</span>
-              ))}
-            </div>
-            {task.deadline && <p className="deadline">Deadline: {task.deadline}</p>}
-            <p>Project: {task.project}</p>
-            <p>Assignee: {task.assignee}</p>
+            {editingTaskId === task.id && editingTask ? (
+              <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
+                <input
+                  type="text"
+                  placeholder="Title"
+                  value={editingTask.title ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                  required
+                />
+                <textarea
+                  placeholder="Description"
+                  value={editingTask.description ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="Tags (comma separated)"
+                  value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
+                />
+                <input
+                  type="date"
+                  value={editingTask.deadline ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, deadline: e.target.value || undefined })}
+                />
+                <input
+                  type="text"
+                  placeholder="Project"
+                  value={editingTask.project ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="Assignee"
+                  value={editingTask.assignee ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
+                />
+                <div className="task-card-actions">
+                  <button type="submit">Save</button>
+                  <button type="button" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <h3>{task.title}</h3>
+                <p>{task.description}</p>
+                <div className="tags">
+                  {task.tags.map((tag) => (
+                    <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
+                  ))}
+                </div>
+                {task.deadline && <p className="deadline">Deadline: {task.deadline}</p>}
+                <p>Project: {task.project}</p>
+                <p>Assignee: {task.assignee}</p>
+                <div className="task-card-actions">
+                  <button type="button" onClick={() => startEditing(task)}>Edit</button>
+                  <button type="button" className="delete-btn" onClick={() => handleDeleteTask(task.id)}>Delete</button>
+                </div>
+              </>
+            )}
           </div>
         ))}
       </div>
