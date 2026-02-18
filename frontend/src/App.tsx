@@ -554,8 +554,8 @@ const App: React.FC = () => {
       <div className="filter-bar">
         <MultiSelectFilter label="Project" options={projects} selected={filterProject} onChange={setFilterProject} />
         <MultiSelectFilter label="Assignee" options={assignees} selected={filterAssignee} onChange={setFilterAssignee} />
-        <MultiSelectFilter label="Status" options={statusLabels} selected={filterStatus} onChange={setFilterStatus} />
         <MultiSelectFilter label="Tag" options={tags} selected={filterTags} onChange={setFilterTags} />
+        <MultiSelectFilter label="Status" options={statusLabels} selected={filterStatus} onChange={setFilterStatus} />
         <button
           type="button"
           className="filter-reset-btn"
