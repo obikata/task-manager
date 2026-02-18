@@ -317,6 +317,8 @@ const App: React.FC = () => {
     try {
       const response = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
       if (response.ok || response.status === 204) {
+        setEditingTaskId(null);
+        setEditingTask(null);
         await fetchTasks();
       } else {
         throw new Error(`Failed to delete task: ${response.status}`);
@@ -402,124 +404,133 @@ const App: React.FC = () => {
   const renderTaskCard = (task: Task) => (
     <div
       key={task.id}
-      className={`task-card status-${editingTaskId === task.id && editingTask ? (editingTask.status ?? 'todo') : (task.status || 'todo')}`}
-      draggable={editingTaskId !== task.id}
-      onDragStart={(e) => editingTaskId !== task.id && handleDragStart(e, task.id)}
+      className={`task-card status-${task.status || 'todo'}`}
+      draggable
+      onDragStart={(e) => handleDragStart(e, task.id)}
     >
-      {editingTaskId === task.id && editingTask ? (
-        <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
-          <div>
-            <label className="filter-label-text">Title</label>
-            <input
-              type="text"
-              placeholder="Enter title"
-              value={editingTask.title ?? ''}
-              onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
-              required
-            />
-          </div>
-          <div>
-            <label className="filter-label-text">Description</label>
-            <textarea
-              placeholder="Enter description"
-              value={editingTask.description ?? ''}
-              onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="filter-label-text">Tags</label>
-            <input
-              type="text"
-              placeholder="Comma separated"
-              value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
-              onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
-            />
-          </div>
-          <div>
-            <label className="filter-label-text">Deadline</label>
-            <DatePicker
-              placeholderText="Select date"
-              dateFormat="yyyy-MM-dd"
-              locale={enUS}
-              selected={editingTask.deadline ? parseISO(editingTask.deadline) : null}
-              onChange={(d: Date | null) => setEditingTask({ ...editingTask, deadline: d ? format(d, 'yyyy-MM-dd') : undefined })}
-              className="react-datepicker-input"
-            />
-          </div>
-          <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
-            <label className="filter-label">
-              <span className="filter-label-text">Status</span>
-              <select
-                value={editingTask.status ?? 'todo'}
-                onChange={(e) => setEditingTask({ ...editingTask, status: e.target.value })}
-              >
-                {TASK_STATUSES.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="filter-label">
-              <span className="filter-label-text">Project</span>
-              <select
-                value={editingTask.project ?? ''}
-                onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
-              >
-                <option value="">All</option>
-                {Array.from(new Set([...(editingTask.project && !projects.includes(editingTask.project) ? [editingTask.project] : []), ...projects])).sort().map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </label>
-            <label className="filter-label">
-              <span className="filter-label-text">Assignee</span>
-              <select
-                value={editingTask.assignee ?? ''}
-                onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
-              >
-                <option value="">All</option>
-                {Array.from(new Set([...(editingTask.assignee && !assignees.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assignees])).sort().map((a) => (
-                  <option key={a} value={a}>{a}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="task-card-actions">
-            <button type="submit">Save</button>
-            <button type="button" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>Cancel</button>
-          </div>
-        </form>
-      ) : (
-        <>
-          <div className="task-card-header">
-            <h3>{task.title}</h3>
-            <select
-              className="status-select"
-              value={task.status || 'todo'}
-              onChange={(e) => handleStatusChange(task.id, e.target.value)}
-              title="Change status"
-            >
-              {TASK_STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
-          <p>{task.description}</p>
-          <div className="tags">
-            {task.tags.map((tag) => (
-              <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
-            ))}
-          </div>
-          {task.deadline && <p className={getDeadlineClassName(task.deadline)}>Deadline: {task.deadline}</p>}
-          <p>Project: {task.project}</p>
-          <p>Assignee: {task.assignee}</p>
-          <div className="task-card-actions">
-            <button type="button" onClick={() => startEditing(task)}>Edit</button>
-            <button type="button" className="delete-btn" onClick={() => handleDeleteTask(task.id)}>Delete</button>
-          </div>
-        </>
-      )}
+      <div className="task-card-header">
+        <h3>{task.title}</h3>
+        <select
+          className="status-select"
+          value={task.status || 'todo'}
+          onChange={(e) => handleStatusChange(task.id, e.target.value)}
+          title="Change status"
+        >
+          {TASK_STATUSES.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+      </div>
+      {task.deadline && <p className={`task-deadline ${getDeadlineClassName(task.deadline)}`}>Deadline: {task.deadline}</p>}
+      <p className="task-description">{task.description}</p>
+      <div className="tags">
+        {task.tags.map((tag) => (
+          <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
+        ))}
+      </div>
+      <p>Project: {task.project}</p>
+      <p>Assignee: {task.assignee}</p>
+      <div className="task-card-actions">
+        <button type="button" onClick={() => startEditing(task)}>Edit</button>
+      </div>
     </div>
   );
+
+  const renderEditModal = () => {
+    if (!editingTaskId || !editingTask) return null;
+    const task = tasks.find(t => t.id === editingTaskId);
+    if (!task) return null;
+    return (
+      <div className="edit-overlay" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>
+        <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
+          <h2 className="edit-modal-title">Edit Task</h2>
+          <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
+            <div>
+              <label className="filter-label-text">Title</label>
+              <input
+                type="text"
+                placeholder="Enter title"
+                value={editingTask.title ?? ''}
+                onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="filter-label-text">Description</label>
+              <textarea
+                placeholder="Enter description"
+                value={editingTask.description ?? ''}
+                onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                rows={6}
+              />
+            </div>
+            <div>
+              <label className="filter-label-text">Tags</label>
+              <input
+                type="text"
+                placeholder="Comma separated"
+                value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
+                onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
+              />
+            </div>
+            <div>
+              <label className="filter-label-text">Deadline</label>
+              <DatePicker
+                placeholderText="Select date"
+                dateFormat="yyyy-MM-dd"
+                locale={enUS}
+                selected={editingTask.deadline ? parseISO(editingTask.deadline) : null}
+                onChange={(d: Date | null) => setEditingTask({ ...editingTask, deadline: d ? format(d, 'yyyy-MM-dd') : undefined })}
+                className="react-datepicker-input"
+              />
+            </div>
+            <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
+              <label className="filter-label">
+                <span className="filter-label-text">Status</span>
+                <select
+                  value={editingTask.status ?? 'todo'}
+                  onChange={(e) => setEditingTask({ ...editingTask, status: e.target.value })}
+                >
+                  {TASK_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="filter-label">
+                <span className="filter-label-text">Project</span>
+                <select
+                  value={editingTask.project ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
+                >
+                  <option value="">All</option>
+                  {Array.from(new Set([...(editingTask.project && !projects.includes(editingTask.project) ? [editingTask.project] : []), ...projects])).sort().map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="filter-label">
+                <span className="filter-label-text">Assignee</span>
+                <select
+                  value={editingTask.assignee ?? ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
+                >
+                  <option value="">All</option>
+                  {Array.from(new Set([...(editingTask.assignee && !assignees.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assignees])).sort().map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="task-card-actions">
+              <button type="submit">Save</button>
+              <button type="button" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>Cancel</button>
+              <button type="button" className="delete-btn" onClick={() => handleDeleteTask(task.id)}>Delete</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
@@ -706,7 +717,8 @@ const App: React.FC = () => {
         </div>
         )}
       </div>
-      <div className="board-container">
+      {renderEditModal()}
+      <div className={`board-container ${editingTaskId ? 'board-container--editing' : ''}`}>
         <div
           className="board-column"
           onDragOver={handleDragOver}
