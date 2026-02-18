@@ -7,7 +7,7 @@ A full-stack task management application with Rust backend and React frontend.
 - Task creation with title, description, tags, deadlines
 - Project-based task organization
 - Organization-wide task views
-- Automatic task generation from meeting notes
+- AI-powered task generation from meeting notes (xAI Grok)
 - Google Account integration
 - Micro-management avoidance through smart automation
 
@@ -100,3 +100,8 @@ flowchart TB
 ### Environment Variables
 
 - `VITE_API_URL`: API base URL for the frontend (default: `http://127.0.0.1:8080`). Set in `frontend/.env` for custom backends.
+- `XAI_API_KEY`: xAI API key for AI task generation. Required for the "Generate Tasks from Meeting Notes (AI)" feature. Create a key at [xAI Console](https://console.x.ai/team/default/api-keys) and set it when running the backend:
+  ```bash
+  export XAI_API_KEY="your_api_key_here"
+  cargo run
+  ```

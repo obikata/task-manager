@@ -3,6 +3,9 @@ use actix_cors::Cors;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
+const XAI_API_URL: &str = "https://api.x.ai/v1/chat/completions";
+const XAI_MODEL: &str = "grok-3-mini";
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Task {
     #[serde(default)]
@@ -103,6 +106,219 @@ async fn delete_task(
     }
 }
 
+#[derive(Deserialize)]
+struct GenerateTasksRequest {
+    meeting_notes: String,
+}
+
+#[derive(Serialize)]
+struct XaiMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct XaiChatRequest {
+    model: &'static str,
+    messages: Vec<XaiMessage>,
+}
+
+#[derive(Deserialize)]
+struct XaiChoice {
+    message: XaiChoiceMessage,
+}
+
+#[derive(Deserialize)]
+struct XaiChoiceMessage {
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct XaiChatResponse {
+    choices: Option<Vec<XaiChoice>>,
+    error: Option<XaiError>,
+}
+
+#[derive(Deserialize)]
+struct XaiError {
+    message: String,
+}
+
+fn extract_json_from_response(text: &str) -> Option<&str> {
+    let text = text.trim();
+    if let Some(start) = text.find("```json") {
+        let content_start = text[start..].find('\n').map(|i| start + i + 1).unwrap_or(start + 7);
+        if let Some(end) = text[content_start..].find("```") {
+            return Some(text[content_start..content_start + end].trim());
+        }
+    }
+    if let Some(start) = text.find("```") {
+        let content_start = text[start..].find('\n').map(|i| start + i + 1).unwrap_or(start + 3);
+        if let Some(end) = text[content_start..].find("```") {
+            return Some(text[content_start..content_start + end].trim());
+        }
+    }
+    if text.starts_with('[') {
+        return Some(text);
+    }
+    None
+}
+
+async fn generate_tasks_from_ai(
+    data: web::Data<AppState>,
+    body: web::Json<GenerateTasksRequest>,
+) -> Result<HttpResponse> {
+    let api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
+    if api_key.is_empty() {
+        return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "XAI_API_KEY is not configured. Please set the environment variable."
+        })));
+    }
+
+    let notes = body.meeting_notes.trim();
+    if notes.is_empty() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "meeting_notes must not be empty"
+        })));
+    }
+
+    let system_prompt = r#"You are a task extraction assistant. Given meeting notes or any text, extract actionable tasks.
+
+Return ONLY a valid JSON array of task objects. Each task must have:
+- "title": string (required, concise task title)
+- "description": string (required, detailed description)
+- "tags": array of strings (e.g. ["meeting", "urgent"])
+- "deadline": string or null (YYYY-MM-DD format if date is mentioned, otherwise null)
+- "project": string (default "General")
+- "assignee": string (default "Unassigned" if not specified)
+
+Example output:
+[{"title":"Review PR #123","description":"Code review for authentication module","tags":["review","urgent"],"deadline":"2025-02-25","project":"Backend","assignee":"Unassigned"}]"#;
+
+    let user_prompt = format!("Extract tasks from these meeting notes:\n\n{}", notes);
+
+    let client = reqwest::Client::new();
+    let xai_req = XaiChatRequest {
+        model: XAI_MODEL,
+        messages: vec![
+            XaiMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            },
+            XaiMessage {
+                role: "user".to_string(),
+                content: user_prompt,
+            },
+        ],
+    };
+
+    let resp = client
+        .post(XAI_API_URL)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&xai_req)
+        .send()
+        .await
+        .map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("xAI API request failed: {}", e))
+        })?;
+
+    let status = resp.status();
+    let body_text = resp.text().await.map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let xai_resp: XaiChatResponse = serde_json::from_str(&body_text).unwrap_or(XaiChatResponse {
+        choices: None,
+        error: Some(XaiError {
+            message: body_text.clone(),
+        }),
+    });
+
+    if !status.is_success() {
+        let err_msg = xai_resp
+            .error
+            .map(|e| e.message)
+            .unwrap_or_else(|| format!("xAI API error: {} - {}", status, body_text));
+        return Ok(HttpResponse::BadGateway().json(serde_json::json!({
+            "error": err_msg
+        })));
+    }
+
+    let content = xai_resp
+        .choices
+        .and_then(|c| c.into_iter().next())
+        .and_then(|c| c.message.content)
+        .ok_or_else(|| {
+            actix_web::error::ErrorInternalServerError("No content in xAI response")
+        })?;
+
+    let json_str = extract_json_from_response(&content).unwrap_or(content.as_str());
+    let generated: Vec<serde_json::Value> = serde_json::from_str(json_str).map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!(
+            "Failed to parse AI response as JSON: {}. Raw: {}",
+            e, json_str
+        ))
+    })?;
+
+    let mut created = Vec::new();
+    let mut tasks = data.tasks.lock().unwrap();
+    let mut next_id = data.next_id.lock().unwrap();
+
+    for item in generated {
+        let title = item
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        let description = item
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let tags: Vec<String> = item
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_else(|| vec!["ai-generated".to_string()]);
+        let deadline = item
+            .get("deadline")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let project = item
+            .get("project")
+            .and_then(|v| v.as_str())
+            .unwrap_or("General")
+            .to_string();
+        let assignee = item
+            .get("assignee")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unassigned")
+            .to_string();
+
+        let task = Task {
+            id: *next_id,
+            title: title.clone(),
+            description: description.clone(),
+            tags: tags.clone(),
+            deadline: deadline.clone(),
+            project: project.clone(),
+            assignee: assignee.clone(),
+        };
+
+        if validate_task(&task).is_none() {
+            *next_id += 1;
+            tasks.push(task.clone());
+            created.push(task);
+        }
+    }
+
+    Ok(HttpResponse::Created().json(created))
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let app_state = web::Data::new(AppState {
@@ -121,6 +337,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .route("/tasks", web::get().to(get_tasks))
             .route("/tasks", web::post().to(create_task))
+            .route("/tasks/generate", web::post().to(generate_tasks_from_ai))
             .route("/tasks/{id}", web::put().to(update_task))
             .route("/tasks/{id}", web::delete().to(delete_task))
     })

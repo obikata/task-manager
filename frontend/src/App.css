@@ -375,8 +375,31 @@ input:checked + .slider:before {
 }
 
 .task-card .deadline {
-  color: #dc3545;
   font-weight: bold;
+}
+
+.task-card .deadline-urgent {
+  color: #dc3545;
+}
+
+.task-card .deadline-warning {
+  color: #fd7e14;
+}
+
+.task-card .deadline-default {
+  color: inherit;
+}
+
+.App.dark .task-card .deadline-urgent {
+  color: #ff6b6b;
+}
+
+.App.dark .task-card .deadline-warning {
+  color: #ffa94d;
+}
+
+.App.dark .task-card .deadline-default {
+  color: inherit;
 }
 
 .task-card-actions {

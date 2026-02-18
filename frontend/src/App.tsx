@@ -62,6 +62,30 @@ interface Task {
   assignee: string;
 }
 
+/** Calculate remaining working days until deadline (excludes weekends). */
+function getWorkingDaysUntil(deadlineStr: string): number {
+  const deadline = new Date(deadlineStr + 'T12:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  deadline.setHours(0, 0, 0, 0);
+  if (deadline < today) return -1;
+  let count = 0;
+  const d = new Date(today);
+  d.setDate(d.getDate() + 1);
+  while (d <= deadline) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
+
+function getDeadlineClassName(deadlineStr: string): string {
+  const remaining = getWorkingDaysUntil(deadlineStr);
+  if (remaining < 5) return 'deadline deadline-urgent';
+  if (remaining < 10) return 'deadline deadline-warning';
+  return 'deadline deadline-default';
+}
+
 const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState({
@@ -76,6 +100,7 @@ const App: React.FC = () => {
   const [filterAssignee, setFilterAssignee] = useState<string[]>([]);
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<string>('');
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
@@ -162,31 +187,22 @@ const App: React.FC = () => {
   };
 
   const generateTasksFromNotes = async () => {
-    const lines = meetingNotes.split('\n').filter(line => line.trim());
-    const generatedTasks = lines.map((line) => ({
-      title: line.trim(),
-      description: `Generated from meeting notes: ${line.trim()}`,
-      tags: ['meeting'],
-      deadline: '',
-      project: 'General',
-      assignee: 'Unassigned',
-    }));
+    const notes = meetingNotes.trim();
+    if (!notes) {
+      setError('会議メモを入力してください');
+      return;
+    }
     setError(null);
+    setGenerating(true);
     try {
-      const results = await Promise.allSettled(
-        generatedTasks.map((task) =>
-          fetch(`${API_BASE}/tasks`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(task),
-          })
-        )
-      );
-      const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok));
-      if (failed.length > 0) {
-        setError(`Failed to create ${failed.length} of ${generatedTasks.length} tasks from meeting notes`);
+      const response = await fetch(`${API_BASE}/tasks/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_notes: notes }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to generate tasks: ${response.status}`);
       }
       await fetchTasks();
       setMeetingNotes('');
@@ -194,6 +210,8 @@ const App: React.FC = () => {
       const msg = err instanceof Error ? err.message : 'Failed to generate tasks from meeting notes';
       setError(msg);
       console.error('Error generating task:', err);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -266,12 +284,19 @@ const App: React.FC = () => {
   const projects = Array.from(new Set(['General', ...tasks.map(t => t.project).filter(p => p && p.trim())])).sort();
   const assignees = Array.from(new Set(['Unassigned', ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
   const tags = Array.from(new Set(tasks.flatMap(t => t.tags).filter(t => t && t.trim()))).sort();
-  const filteredTasks = tasks.filter(task => {
-    const projectMatch = filterProject.length === 0 || filterProject.includes(task.project);
-    const assigneeMatch = filterAssignee.length === 0 || filterAssignee.includes(task.assignee);
-    const tagMatch = filterTags.length === 0 || filterTags.some(tag => task.tags.includes(tag));
-    return projectMatch && assigneeMatch && tagMatch;
-  });
+  const filteredTasks = tasks
+    .filter(task => {
+      const projectMatch = filterProject.length === 0 || filterProject.includes(task.project);
+      const assigneeMatch = filterAssignee.length === 0 || filterAssignee.includes(task.assignee);
+      const tagMatch = filterTags.length === 0 || filterTags.some(tag => task.tags.includes(tag));
+      return projectMatch && assigneeMatch && tagMatch;
+    })
+    .sort((a, b) => {
+      if (!a.deadline && !b.deadline) return 0;
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return a.deadline.localeCompare(b.deadline);
+    });
 
   return (
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
@@ -387,14 +412,17 @@ const App: React.FC = () => {
         </form>
       </div>
       <div className="task-form">
-        <h2>Generate Tasks from Meeting Notes</h2>
+        <h2>Generate Tasks from Meeting Notes (AI)</h2>
         <textarea
-          placeholder="Paste meeting notes here..."
+          placeholder="会議メモやテキストを貼り付けてください。xAI (Grok) がタスクを自動抽出します..."
           value={meetingNotes}
           onChange={(e) => setMeetingNotes(e.target.value)}
           rows={5}
+          disabled={generating}
         />
-        <button onClick={generateTasksFromNotes}>Generate Tasks</button>
+        <button onClick={generateTasksFromNotes} disabled={generating}>
+          {generating ? '生成中...' : 'AIでタスクを生成'}
+        </button>
       </div>
       <div className="task-list">
         {loading && tasks.length === 0 && (
@@ -470,7 +498,7 @@ const App: React.FC = () => {
                     <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
                   ))}
                 </div>
-                {task.deadline && <p className="deadline">Deadline: {task.deadline}</p>}
+                {task.deadline && <p className={getDeadlineClassName(task.deadline)}>Deadline: {task.deadline}</p>}
                 <p>Project: {task.project}</p>
                 <p>Assignee: {task.assignee}</p>
                 <div className="task-card-actions">
