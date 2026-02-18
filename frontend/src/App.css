@@ -7,7 +7,7 @@
   transition: background-color 0.3s, color 0.3s;
 }
 
-/* コンテンツを中央に配置し、適切な幅に制限（一般的なWebアプリのUI/UX） */
+/* Center content and limit width for typical web app layout */
 .app-container {
   max-width: 720px;
   margin: 0 auto;
@@ -83,15 +83,64 @@ h1 {
   border-color: #555;
 }
 
-/* カレンダーアイコンを非表示（ボックス全体クリックでカレンダー表示） */
-input[type="date"] {
+/* DatePicker - hide clear button (blue blob and ×) */
+.react-datepicker__close-icon {
+  display: none !important;
+}
+
+/* DatePicker wrapper - full width for form layout */
+.react-datepicker-wrapper {
+  display: block !important;
+  width: 100%;
+}
+
+/* DatePicker input - match form field styling */
+.react-datepicker-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  background-color: white;
+  color: #333;
   cursor: pointer;
 }
 
-input[type="date"]::-webkit-calendar-picker-indicator,
-input[type="date"]::-moz-calendar-picker-indicator {
-  opacity: 0;
-  cursor: pointer;
+.App.dark .react-datepicker-input {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  border-color: #555;
+}
+
+/* DatePicker popup dark mode */
+.App.dark .react-datepicker {
+  background: #2a2a2a;
+  border-color: #555;
+}
+
+.App.dark .react-datepicker__header {
+  background: #1e1e1e;
+  border-color: #555;
+}
+
+.App.dark .react-datepicker__current-month,
+.App.dark .react-datepicker__day-name,
+.App.dark .react-datepicker__day {
+  color: #fff;
+}
+
+.App.dark .react-datepicker__day--outside-month {
+  color: #666;
+}
+
+.App.dark .react-datepicker__day:hover {
+  background: #404040;
+}
+
+.App.dark .react-datepicker__day--selected {
+  background: #1da1f2;
 }
 
 .task-form button {

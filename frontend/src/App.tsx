@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import DatePicker, { registerLocale, setDefaultLocale } from 'react-datepicker';
+import { format, parseISO } from 'date-fns';
+import { enUS } from 'date-fns/locale';
+import 'react-datepicker/dist/react-datepicker.css';
 import './App.css';
+
+registerLocale('en-US', enUS);
+setDefaultLocale('en-US');
 
 interface MultiSelectFilterProps {
   label: string;
@@ -53,10 +60,10 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ label, options, s
 };
 
 const TASK_STATUSES = [
-  { value: 'todo', label: '未着手' },
-  { value: 'in_progress', label: '進行中' },
-  { value: 'done', label: '完了' },
-  { value: 'blocked', label: 'ブロック中' },
+  { value: 'todo', label: 'Todo' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'done', label: 'Done' },
+  { value: 'blocked', label: 'Blocked' },
 ] as const;
 
 type TaskStatus = (typeof TASK_STATUSES)[number]['value'];
@@ -203,7 +210,7 @@ const App: React.FC = () => {
   const generateTasksFromNotes = async () => {
     const notes = meetingNotes.trim();
     if (!notes) {
-      setError('会議メモを入力してください');
+      setError('Please enter meeting notes');
       return;
     }
     setError(null);
@@ -281,7 +288,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteTask = async (taskId: number) => {
-    if (!window.confirm('このタスクを削除しますか？')) return;
+    if (!window.confirm('Delete this task?')) return;
     setError(null);
     try {
       const response = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
@@ -390,11 +397,18 @@ const App: React.FC = () => {
             value={newTask.tags}
             onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
           />
-          <input
-            type="date"
-            value={newTask.deadline}
-            onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })}
-          />
+          <div>
+            <label htmlFor="new-deadline">Deadline</label>
+            <DatePicker
+              id="new-deadline"
+              placeholderText="Select date"
+              dateFormat="yyyy-MM-dd"
+              locale={enUS}
+              selected={newTask.deadline ? parseISO(newTask.deadline) : null}
+              onChange={(d: Date | null) => setNewTask({ ...newTask, deadline: d ? format(d, 'yyyy-MM-dd') : '' })}
+              className="react-datepicker-input"
+            />
+          </div>
           <div>
             <label htmlFor="new-project">Project</label>
             <select
@@ -409,7 +423,7 @@ const App: React.FC = () => {
               {projects.map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
-              <option value="__new__">＋新規</option>
+              <option value="__new__">+ New</option>
             </select>
             {(!newTask.project || projects.includes(newTask.project)) ? null : (
               <input
@@ -447,7 +461,7 @@ const App: React.FC = () => {
               {assignees.map((a) => (
                 <option key={a} value={a}>{a}</option>
               ))}
-              <option value="__new__">＋新規</option>
+              <option value="__new__">+ New</option>
             </select>
             {(!newTask.assignee || assignees.includes(newTask.assignee)) ? null : (
               <input
@@ -465,22 +479,22 @@ const App: React.FC = () => {
       <div className="task-form">
         <h2>Generate Tasks from Meeting Notes (AI)</h2>
         <textarea
-          placeholder="会議メモやテキストを貼り付けてください。xAI (Grok) がタスクを自動抽出します..."
+          placeholder="Paste meeting notes or text here. xAI (Grok) will extract tasks automatically..."
           value={meetingNotes}
           onChange={(e) => setMeetingNotes(e.target.value)}
           rows={5}
           disabled={generating}
         />
         <button onClick={generateTasksFromNotes} disabled={generating}>
-          {generating ? '生成中...' : 'AIでタスクを生成'}
+          {generating ? 'Generating...' : 'Generate Tasks with AI'}
         </button>
       </div>
       <div className="task-list">
         {loading && tasks.length === 0 && (
-          <p className="loading-message">読み込み中...</p>
+          <p className="loading-message">Loading...</p>
         )}
         {!loading && filteredTasks.length === 0 && (
-          <p className="empty-state-message">該当するタスクはありません</p>
+          <p className="empty-state-message">No tasks found</p>
         )}
         {!loading && filteredTasks.length > 0 && filteredTasks.map((task) => (
           <div key={task.id} className="task-card">
@@ -504,11 +518,17 @@ const App: React.FC = () => {
                   value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
                   onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
                 />
-                <input
-                  type="date"
-                  value={editingTask.deadline ?? ''}
-                  onChange={(e) => setEditingTask({ ...editingTask, deadline: e.target.value || undefined })}
-                />
+                <div>
+                  <label className="filter-label-text">Deadline</label>
+                  <DatePicker
+                    placeholderText="Select date"
+                    dateFormat="yyyy-MM-dd"
+                    locale={enUS}
+                    selected={editingTask.deadline ? parseISO(editingTask.deadline) : null}
+                    onChange={(d: Date | null) => setEditingTask({ ...editingTask, deadline: d ? format(d, 'yyyy-MM-dd') : undefined })}
+                    className="react-datepicker-input"
+                  />
+                </div>
                 <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
                   <label className="filter-label">
                     <span className="filter-label-text">Status</span>
@@ -559,7 +579,7 @@ const App: React.FC = () => {
                     className={`status-select status-${task.status || 'todo'}`}
                     value={task.status || 'todo'}
                     onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                    title="ステータスを変更"
+                    title="Change status"
                   >
                     {TASK_STATUSES.map((s) => (
                       <option key={s.value} value={s.value}>{s.label}</option>
