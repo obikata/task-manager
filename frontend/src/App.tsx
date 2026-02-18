@@ -551,7 +551,7 @@ const App: React.FC = () => {
           onClick={() => setOpenAddTask((prev) => !prev)}
           aria-expanded={openAddTask}
         >
-          <h2>Add New Task</h2>
+          <h2>Add Task (Manual)</h2>
           <span className="collapsible-icon">{openAddTask ? '▼' : '▶'}</span>
         </button>
         {openAddTask && (
@@ -663,7 +663,7 @@ const App: React.FC = () => {
               />
             )}
           </div>
-          <button type="submit">Add Task</button>
+          <button type="submit">Add</button>
         </form>
         </div>
         )}
@@ -675,16 +675,15 @@ const App: React.FC = () => {
           onClick={() => setOpenAiGenerate((prev) => !prev)}
           aria-expanded={openAiGenerate}
         >
-          <h2>Generate Tasks from Meeting Notes (AI)</h2>
+          <h2>Generate Tasks (AI)</h2>
           <span className="collapsible-icon">{openAiGenerate ? '▼' : '▶'}</span>
         </button>
         {openAiGenerate && (
         <div className="task-form collapsible-content">
         <div>
-          <label htmlFor="meeting-notes">Meeting notes</label>
           <textarea
             id="meeting-notes"
-            placeholder="Paste meeting notes or text here"
+            placeholder="Paste text to generate tasks with AI"
             value={meetingNotes}
             onChange={(e) => setMeetingNotes(e.target.value)}
             rows={5}
@@ -692,7 +691,7 @@ const App: React.FC = () => {
           />
         </div>
         <button onClick={generateTasksFromNotes} disabled={generating}>
-          {generating ? 'Generating...' : 'Generate Tasks with AI'}
+          {generating ? 'Generating...' : 'Generate'}
         </button>
         </div>
         )}
