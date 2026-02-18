@@ -20,6 +20,8 @@ struct Task {
     assignee: String,
     #[serde(default = "default_status")]
     status: String,
+    #[serde(default)]
+    in_sprint: bool,
 }
 
 fn default_status() -> String {
@@ -69,6 +71,7 @@ async fn create_task(
     if task_inner.status.is_empty() || !VALID_STATUSES.contains(&task_inner.status.as_str()) {
         task_inner.status = "todo".to_string();
     }
+    task_inner.in_sprint = false; // New tasks go to Backlog
     if let Some(msg) = validate_task(&task_inner) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
     }
@@ -102,6 +105,27 @@ async fn update_task(
         t.project = task.project.clone();
         t.assignee = task.assignee.clone();
         t.status = task.status.clone();
+        t.in_sprint = task.in_sprint;
+        Ok(HttpResponse::Ok().json(t.clone()))
+    } else {
+        Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateSprintRequest {
+    in_sprint: bool,
+}
+
+async fn update_task_sprint(
+    data: web::Data<AppState>,
+    path: web::Path<u64>,
+    body: web::Json<UpdateSprintRequest>,
+) -> Result<HttpResponse> {
+    let id = path.into_inner();
+    let mut tasks = data.tasks.lock().unwrap();
+    if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
+        t.in_sprint = body.in_sprint;
         Ok(HttpResponse::Ok().json(t.clone()))
     } else {
         Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
@@ -354,6 +378,7 @@ Example output:
             project: project.clone(),
             assignee: assignee.clone(),
             status: status.clone(),
+            in_sprint: false,
         };
 
         if validate_task(&task).is_none() {
@@ -387,6 +412,7 @@ async fn main() -> std::io::Result<()> {
             .route("/tasks/generate", web::post().to(generate_tasks_from_ai))
             .route("/tasks/{id}", web::put().to(update_task))
             .route("/tasks/{id}/status", web::put().to(update_task_status))
+            .route("/tasks/{id}/sprint", web::put().to(update_task_sprint))
             .route("/tasks/{id}", web::delete().to(delete_task))
     })
     .bind("0.0.0.0:8080")?

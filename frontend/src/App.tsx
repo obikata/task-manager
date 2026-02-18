@@ -77,6 +77,7 @@ interface Task {
   project: string;
   assignee: string;
   status: TaskStatus | string;
+  in_sprint?: boolean;
 }
 
 /** Calculate remaining working days until deadline (excludes weekends). */
@@ -132,6 +133,8 @@ const App: React.FC = () => {
       return true;
     }
   });
+  const [openAddTask, setOpenAddTask] = useState(false);
+  const [openAiGenerate, setOpenAiGenerate] = useState(false);
 
   useEffect(() => {
     fetchTasks();
@@ -250,6 +253,7 @@ const App: React.FC = () => {
           project: (editingTask.project ?? '').trim(),
           assignee: (editingTask.assignee ?? '').trim(),
           status: editingTask.status ?? 'todo',
+          in_sprint: editingTask.in_sprint ?? false,
           tags: Array.isArray(editingTask.tags) ? editingTask.tags : String(editingTask.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
         }),
       });
@@ -263,6 +267,26 @@ const App: React.FC = () => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update task';
+      setError(msg);
+    }
+  };
+
+  const handleSprintChange = async (taskId: number, inSprint: boolean) => {
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/sprint`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ in_sprint: inSprint }),
+      });
+      if (response.ok) {
+        await fetchTasks();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error((errData as { error?: string })?.error || `Failed to update: ${response.status}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update';
       setError(msg);
     }
   };
@@ -327,21 +351,165 @@ const App: React.FC = () => {
   const assignees = Array.from(new Set(['Unassigned', ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
   const tags = Array.from(new Set(tasks.flatMap(t => t.tags).filter(t => t && t.trim()))).sort();
   const statusLabels = TASK_STATUSES.map(s => s.label);
-  const filteredTasks = tasks
-    .filter(task => {
-      const projectMatch = filterProject.length === 0 || filterProject.includes(task.project);
-      const assigneeMatch = filterAssignee.length === 0 || filterAssignee.includes(task.assignee);
-      const tagMatch = filterTags.length === 0 || filterTags.some(tag => task.tags.includes(tag));
-      const taskStatusLabel = TASK_STATUSES.find(s => s.value === (task.status || 'todo'))?.label ?? task.status;
-      const statusMatch = filterStatus.length === 0 || filterStatus.includes(taskStatusLabel);
-      return projectMatch && assigneeMatch && tagMatch && statusMatch;
-    })
-    .sort((a, b) => {
-      if (!a.deadline && !b.deadline) return 0;
-      if (!a.deadline) return 1;
-      if (!b.deadline) return -1;
-      return a.deadline.localeCompare(b.deadline);
-    });
+  const taskSort = (a: Task, b: Task) => {
+    if (!a.deadline && !b.deadline) return 0;
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return a.deadline.localeCompare(b.deadline);
+  };
+
+  const filteredTasks = tasks.filter(task => {
+    const projectMatch = filterProject.length === 0 || filterProject.includes(task.project);
+    const assigneeMatch = filterAssignee.length === 0 || filterAssignee.includes(task.assignee);
+    const tagMatch = filterTags.length === 0 || filterTags.some(tag => task.tags.includes(tag));
+    const taskStatusLabel = TASK_STATUSES.find(s => s.value === (task.status || 'todo'))?.label ?? task.status;
+    const statusMatch = filterStatus.length === 0 || filterStatus.includes(taskStatusLabel);
+    return projectMatch && assigneeMatch && tagMatch && statusMatch;
+  });
+
+  const backlogTasks = filteredTasks.filter(t => !t.in_sprint).sort(taskSort);
+  const sprintTasks = filteredTasks.filter(t => !!t.in_sprint).sort(taskSort);
+
+  const handleDragStart = (e: React.DragEvent, taskId: number) => {
+    e.dataTransfer.setData('taskId', String(taskId));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, targetInSprint: boolean) => {
+    e.preventDefault();
+    const taskId = parseInt(e.dataTransfer.getData('taskId'), 10);
+    if (isNaN(taskId)) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || task.in_sprint === targetInSprint) return;
+    handleSprintChange(taskId, targetInSprint);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const renderTaskCard = (task: Task) => (
+    <div
+      key={task.id}
+      className={`task-card status-${editingTaskId === task.id && editingTask ? (editingTask.status ?? 'todo') : (task.status || 'todo')}`}
+      draggable={editingTaskId !== task.id}
+      onDragStart={(e) => editingTaskId !== task.id && handleDragStart(e, task.id)}
+    >
+      {editingTaskId === task.id && editingTask ? (
+        <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
+          <div>
+            <label className="filter-label-text">Title</label>
+            <input
+              type="text"
+              placeholder="Enter title"
+              value={editingTask.title ?? ''}
+              onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+              required
+            />
+          </div>
+          <div>
+            <label className="filter-label-text">Description</label>
+            <textarea
+              placeholder="Enter description"
+              value={editingTask.description ?? ''}
+              onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="filter-label-text">Tags</label>
+            <input
+              type="text"
+              placeholder="Comma separated"
+              value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
+              onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
+            />
+          </div>
+          <div>
+            <label className="filter-label-text">Deadline</label>
+            <DatePicker
+              placeholderText="Select date"
+              dateFormat="yyyy-MM-dd"
+              locale={enUS}
+              selected={editingTask.deadline ? parseISO(editingTask.deadline) : null}
+              onChange={(d: Date | null) => setEditingTask({ ...editingTask, deadline: d ? format(d, 'yyyy-MM-dd') : undefined })}
+              className="react-datepicker-input"
+            />
+          </div>
+          <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
+            <label className="filter-label">
+              <span className="filter-label-text">Status</span>
+              <select
+                value={editingTask.status ?? 'todo'}
+                onChange={(e) => setEditingTask({ ...editingTask, status: e.target.value })}
+              >
+                {TASK_STATUSES.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-label">
+              <span className="filter-label-text">Project</span>
+              <select
+                value={editingTask.project ?? ''}
+                onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
+              >
+                <option value="">All</option>
+                {Array.from(new Set([...(editingTask.project && !projects.includes(editingTask.project) ? [editingTask.project] : []), ...projects])).sort().map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-label">
+              <span className="filter-label-text">Assignee</span>
+              <select
+                value={editingTask.assignee ?? ''}
+                onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
+              >
+                <option value="">All</option>
+                {Array.from(new Set([...(editingTask.assignee && !assignees.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assignees])).sort().map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="task-card-actions">
+            <button type="submit">Save</button>
+            <button type="button" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div className="task-card-header">
+            <h3>{task.title}</h3>
+            <select
+              className="status-select"
+              value={task.status || 'todo'}
+              onChange={(e) => handleStatusChange(task.id, e.target.value)}
+              title="Change status"
+            >
+              {TASK_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+          <p>{task.description}</p>
+          <div className="tags">
+            {task.tags.map((tag) => (
+              <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
+            ))}
+          </div>
+          {task.deadline && <p className={getDeadlineClassName(task.deadline)}>Deadline: {task.deadline}</p>}
+          <p>Project: {task.project}</p>
+          <p>Assignee: {task.assignee}</p>
+          <div className="task-card-actions">
+            <button type="button" onClick={() => startEditing(task)}>Edit</button>
+            <button type="button" className="delete-btn" onClick={() => handleDeleteTask(task.id)}>Delete</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
@@ -376,8 +544,18 @@ const App: React.FC = () => {
           Reset
         </button>
       </div>
-      <div className="task-form">
-        <h2>Add New Task</h2>
+      <div className="collapsible-section">
+        <button
+          type="button"
+          className="collapsible-header"
+          onClick={() => setOpenAddTask((prev) => !prev)}
+          aria-expanded={openAddTask}
+        >
+          <h2>Add New Task</h2>
+          <span className="collapsible-icon">{openAddTask ? '▼' : '▶'}</span>
+        </button>
+        {openAddTask && (
+        <div className="task-form collapsible-content">
         <form onSubmit={handleSubmit}>
           <div>
             <label htmlFor="new-title">Title</label>
@@ -487,9 +665,21 @@ const App: React.FC = () => {
           </div>
           <button type="submit">Add Task</button>
         </form>
+        </div>
+        )}
       </div>
-      <div className="task-form">
-        <h2>Generate Tasks from Meeting Notes (AI)</h2>
+      <div className="collapsible-section">
+        <button
+          type="button"
+          className="collapsible-header"
+          onClick={() => setOpenAiGenerate((prev) => !prev)}
+          aria-expanded={openAiGenerate}
+        >
+          <h2>Generate Tasks from Meeting Notes (AI)</h2>
+          <span className="collapsible-icon">{openAiGenerate ? '▼' : '▶'}</span>
+        </button>
+        {openAiGenerate && (
+        <div className="task-form collapsible-content">
         <div>
           <label htmlFor="meeting-notes">Meeting notes</label>
           <textarea
@@ -504,130 +694,36 @@ const App: React.FC = () => {
         <button onClick={generateTasksFromNotes} disabled={generating}>
           {generating ? 'Generating...' : 'Generate Tasks with AI'}
         </button>
+        </div>
+        )}
       </div>
-      <div className="task-list">
-        {loading && tasks.length === 0 && (
-          <p className="loading-message">Loading...</p>
-        )}
-        {!loading && filteredTasks.length === 0 && (
-          <p className="empty-state-message">No tasks found</p>
-        )}
-        {!loading && filteredTasks.length > 0 && filteredTasks.map((task) => (
-          <div key={task.id} className={`task-card status-${editingTaskId === task.id && editingTask ? (editingTask.status ?? 'todo') : (task.status || 'todo')}`}>
-            {editingTaskId === task.id && editingTask ? (
-              <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
-                <div>
-                  <label className="filter-label-text">Title</label>
-                  <input
-                    type="text"
-                    placeholder="Enter title"
-                    value={editingTask.title ?? ''}
-                    onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="filter-label-text">Description</label>
-                  <textarea
-                    placeholder="Enter description"
-                    value={editingTask.description ?? ''}
-                    onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="filter-label-text">Tags</label>
-                  <input
-                    type="text"
-                    placeholder="Comma separated"
-                    value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
-                    onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
-                  />
-                </div>
-                <div>
-                  <label className="filter-label-text">Deadline</label>
-                  <DatePicker
-                    placeholderText="Select date"
-                    dateFormat="yyyy-MM-dd"
-                    locale={enUS}
-                    selected={editingTask.deadline ? parseISO(editingTask.deadline) : null}
-                    onChange={(d: Date | null) => setEditingTask({ ...editingTask, deadline: d ? format(d, 'yyyy-MM-dd') : undefined })}
-                    className="react-datepicker-input"
-                  />
-                </div>
-                <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
-                  <label className="filter-label">
-                    <span className="filter-label-text">Status</span>
-                    <select
-                      value={editingTask.status ?? 'todo'}
-                      onChange={(e) => setEditingTask({ ...editingTask, status: e.target.value })}
-                    >
-                      {TASK_STATUSES.map((s) => (
-                        <option key={s.value} value={s.value}>{s.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="filter-label">
-                    <span className="filter-label-text">Project</span>
-                    <select
-                      value={editingTask.project ?? ''}
-                      onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
-                    >
-                      <option value="">All</option>
-                      {Array.from(new Set([...(editingTask.project && !projects.includes(editingTask.project) ? [editingTask.project] : []), ...projects])).sort().map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="filter-label">
-                    <span className="filter-label-text">Assignee</span>
-                    <select
-                      value={editingTask.assignee ?? ''}
-                      onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
-                    >
-                      <option value="">All</option>
-                      {Array.from(new Set([...(editingTask.assignee && !assignees.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assignees])).sort().map((a) => (
-                        <option key={a} value={a}>{a}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="task-card-actions">
-                  <button type="submit">Save</button>
-                  <button type="button" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>Cancel</button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <div className="task-card-header">
-                  <h3>{task.title}</h3>
-                  <select
-                    className="status-select"
-                    value={task.status || 'todo'}
-                    onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                    title="Change status"
-                  >
-                    {TASK_STATUSES.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <p>{task.description}</p>
-                <div className="tags">
-                  {task.tags.map((tag) => (
-                    <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
-                  ))}
-                </div>
-                {task.deadline && <p className={getDeadlineClassName(task.deadline)}>Deadline: {task.deadline}</p>}
-                <p>Project: {task.project}</p>
-                <p>Assignee: {task.assignee}</p>
-                <div className="task-card-actions">
-                  <button type="button" onClick={() => startEditing(task)}>Edit</button>
-                  <button type="button" className="delete-btn" onClick={() => handleDeleteTask(task.id)}>Delete</button>
-                </div>
-              </>
-            )}
+      <div className="board-container">
+        <div
+          className="board-column"
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(e, true)}
+        >
+          <h3 className="board-column-title">Sprint</h3>
+          <div className="task-list">
+            {!loading && sprintTasks.map((task) => renderTaskCard(task))}
           </div>
-        ))}
+        </div>
+        <div
+          className="board-column"
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(e, false)}
+        >
+          <h3 className="board-column-title">Backlog</h3>
+          <div className="task-list">
+            {loading && tasks.length === 0 && (
+              <p className="loading-message">Loading...</p>
+            )}
+            {!loading && backlogTasks.length === 0 && sprintTasks.length === 0 && (
+              <p className="empty-state-message">No tasks found</p>
+            )}
+            {!loading && backlogTasks.map((task) => renderTaskCard(task))}
+          </div>
+        </div>
       </div>
       </div>
     </div>
