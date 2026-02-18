@@ -11,6 +11,51 @@ A full-stack task management application with Rust backend and React frontend.
 - Google Account integration
 - Micro-management avoidance through smart automation
 
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["Client"]
+        Browser["Browser"]
+    end
+
+    subgraph Frontend["Frontend (React + Vite)"]
+        UI["React UI"]
+        Vite["Vite Dev Server"]
+    end
+
+    subgraph Backend["Backend (Rust)"]
+        API["Actix-web API"]
+        State["In-Memory State"]
+    end
+
+    Browser -->|":3000"| Vite
+    Vite --> UI
+    UI -->|"REST /tasks"| API
+    API --> State
+```
+
+## Prerequisites
+
+### Backend
+
+- **Rust** (1.70+)
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  source $HOME/.cargo/env
+  ```
+
+### Frontend
+
+- **Node.js** (20.19+)
+  ```bash
+  # nvm (recommended)
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  source ~/.bashrc
+  nvm install 20
+  nvm use 20
+  ```
+
 ## Setup
 
 ### Backend (Rust)
@@ -51,7 +96,3 @@ A full-stack task management application with Rust backend and React frontend.
 
 - Backend runs on http://localhost:8080
 - Frontend runs on http://localhost:3000
-
-## Development
-
-This project follows Tesla/SpaceX style rapid iteration development.
