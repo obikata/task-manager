@@ -337,6 +337,92 @@ input:checked + .slider:before {
   color: #ffffff;
 }
 
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.task-card-header h3 {
+  flex: 1;
+  margin: 0;
+  color: #333;
+}
+
+.App.dark .task-card-header h3 {
+  color: #ffffff;
+}
+
+.status-badge,
+.status-select {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.status-select {
+  min-width: 90px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23657786' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 24px;
+}
+
+.status-badge.status-todo,
+.status-select.status-todo {
+  background: #e1e8ed;
+  color: #657786;
+}
+
+.status-badge.status-in_progress,
+.status-select.status-in_progress {
+  background: #e8f4fd;
+  color: #1da1f2;
+}
+
+.status-badge.status-done,
+.status-select.status-done {
+  background: #d4edda;
+  color: #28a745;
+}
+
+.status-badge.status-blocked,
+.status-select.status-blocked {
+  background: #f8d7da;
+  color: #dc3545;
+}
+
+.App.dark .status-badge.status-todo,
+.App.dark .status-select.status-todo {
+  background: #404040;
+  color: #999;
+}
+
+.App.dark .status-badge.status-in_progress,
+.App.dark .status-select.status-in_progress {
+  background: #1a3a4a;
+  color: #6eb5f7;
+}
+
+.App.dark .status-badge.status-done,
+.App.dark .status-select.status-done {
+  background: #1e3d2a;
+  color: #5cb85c;
+}
+
+.App.dark .status-badge.status-blocked,
+.App.dark .status-select.status-blocked {
+  background: #4a2a2a;
+  color: #ff6b6b;
+}
+
 .task-card h3 {
   margin-top: 0;
   color: #333;

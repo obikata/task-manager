@@ -52,6 +52,15 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ label, options, s
   );
 };
 
+const TASK_STATUSES = [
+  { value: 'todo', label: '未着手' },
+  { value: 'in_progress', label: '進行中' },
+  { value: 'done', label: '完了' },
+  { value: 'blocked', label: 'ブロック中' },
+] as const;
+
+type TaskStatus = (typeof TASK_STATUSES)[number]['value'];
+
 interface Task {
   id: number;
   title: string;
@@ -60,6 +69,7 @@ interface Task {
   deadline?: string;
   project: string;
   assignee: string;
+  status: TaskStatus | string;
 }
 
 /** Calculate remaining working days until deadline (excludes weekends). */
@@ -95,10 +105,12 @@ const App: React.FC = () => {
     deadline: '',
     project: '',
     assignee: '',
+    status: 'todo' as TaskStatus,
   });
   const [filterProject, setFilterProject] = useState<string[]>([]);
   const [filterAssignee, setFilterAssignee] = useState<string[]>([]);
   const [filterTags, setFilterTags] = useState<string[]>([]);
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<string>('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +166,7 @@ const App: React.FC = () => {
       assignee: newTask.assignee.trim(),
       tags,
       deadline: newTask.deadline || undefined,
+      status: newTask.status || 'todo',
     };
     setError(null);
     try {
@@ -174,6 +187,7 @@ const App: React.FC = () => {
           deadline: '',
           project: '',
           assignee: '',
+          status: 'todo',
         });
       } else {
         const text = await response.text();
@@ -228,6 +242,7 @@ const App: React.FC = () => {
           id: taskId,
           project: (editingTask.project ?? '').trim(),
           assignee: (editingTask.assignee ?? '').trim(),
+          status: editingTask.status ?? 'todo',
           tags: Array.isArray(editingTask.tags) ? editingTask.tags : String(editingTask.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
         }),
       });
@@ -241,6 +256,26 @@ const App: React.FC = () => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update task';
+      setError(msg);
+    }
+  };
+
+  const handleStatusChange = async (taskId: number, newStatus: string) => {
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (response.ok) {
+        await fetchTasks();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error((errData as { error?: string })?.error || `Failed to update status: ${response.status}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update status';
       setError(msg);
     }
   };
@@ -284,12 +319,15 @@ const App: React.FC = () => {
   const projects = Array.from(new Set(['General', ...tasks.map(t => t.project).filter(p => p && p.trim())])).sort();
   const assignees = Array.from(new Set(['Unassigned', ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
   const tags = Array.from(new Set(tasks.flatMap(t => t.tags).filter(t => t && t.trim()))).sort();
+  const statusLabels = TASK_STATUSES.map(s => s.label);
   const filteredTasks = tasks
     .filter(task => {
       const projectMatch = filterProject.length === 0 || filterProject.includes(task.project);
       const assigneeMatch = filterAssignee.length === 0 || filterAssignee.includes(task.assignee);
       const tagMatch = filterTags.length === 0 || filterTags.some(tag => task.tags.includes(tag));
-      return projectMatch && assigneeMatch && tagMatch;
+      const taskStatusLabel = TASK_STATUSES.find(s => s.value === (task.status || 'todo'))?.label ?? task.status;
+      const statusMatch = filterStatus.length === 0 || filterStatus.includes(taskStatusLabel);
+      return projectMatch && assigneeMatch && tagMatch && statusMatch;
     })
     .sort((a, b) => {
       if (!a.deadline && !b.deadline) return 0;
@@ -320,12 +358,13 @@ const App: React.FC = () => {
       <div className="filter-bar">
         <MultiSelectFilter label="Project" options={projects} selected={filterProject} onChange={setFilterProject} />
         <MultiSelectFilter label="Assignee" options={assignees} selected={filterAssignee} onChange={setFilterAssignee} />
+        <MultiSelectFilter label="Status" options={statusLabels} selected={filterStatus} onChange={setFilterStatus} />
         <MultiSelectFilter label="Tag" options={tags} selected={filterTags} onChange={setFilterTags} />
         <button
           type="button"
           className="filter-reset-btn"
-          onClick={() => { setFilterProject([]); setFilterAssignee([]); setFilterTags([]); }}
-          disabled={filterProject.length === 0 && filterAssignee.length === 0 && filterTags.length === 0}
+          onClick={() => { setFilterProject([]); setFilterAssignee([]); setFilterTags([]); setFilterStatus([]); }}
+          disabled={filterProject.length === 0 && filterAssignee.length === 0 && filterTags.length === 0 && filterStatus.length === 0}
         >
           Reset
         </button>
@@ -381,6 +420,18 @@ const App: React.FC = () => {
                 style={{ marginTop: 4 }}
               />
             )}
+          </div>
+          <div>
+            <label htmlFor="new-status">Status</label>
+            <select
+              id="new-status"
+              value={newTask.status}
+              onChange={(e) => setNewTask({ ...newTask, status: e.target.value as TaskStatus })}
+            >
+              {TASK_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label htmlFor="new-assignee">Assignee</label>
@@ -460,6 +511,17 @@ const App: React.FC = () => {
                 />
                 <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
                   <label className="filter-label">
+                    <span className="filter-label-text">Status</span>
+                    <select
+                      value={editingTask.status ?? 'todo'}
+                      onChange={(e) => setEditingTask({ ...editingTask, status: e.target.value })}
+                    >
+                      {TASK_STATUSES.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="filter-label">
                     <span className="filter-label-text">Project</span>
                     <select
                       value={editingTask.project ?? ''}
@@ -491,7 +553,19 @@ const App: React.FC = () => {
               </form>
             ) : (
               <>
-                <h3>{task.title}</h3>
+                <div className="task-card-header">
+                  <h3>{task.title}</h3>
+                  <select
+                    className={`status-select status-${task.status || 'todo'}`}
+                    value={task.status || 'todo'}
+                    onChange={(e) => handleStatusChange(task.id, e.target.value)}
+                    title="ステータスを変更"
+                  >
+                    {TASK_STATUSES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
                 <p>{task.description}</p>
                 <div className="tags">
                   {task.tags.map((tag) => (

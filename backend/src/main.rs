@@ -6,6 +6,8 @@ use std::sync::Mutex;
 const XAI_API_URL: &str = "https://api.x.ai/v1/chat/completions";
 const XAI_MODEL: &str = "grok-3-mini";
 
+const VALID_STATUSES: [&str; 4] = ["todo", "in_progress", "done", "blocked"];
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Task {
     #[serde(default)]
@@ -16,6 +18,12 @@ struct Task {
     deadline: Option<String>,
     project: String,
     assignee: String,
+    #[serde(default = "default_status")]
+    status: String,
+}
+
+fn default_status() -> String {
+    "todo".to_string()
 }
 
 struct AppState {
@@ -47,6 +55,9 @@ fn validate_task(task: &Task) -> Option<&'static str> {
             return Some("each tag must be at most 100 characters");
         }
     }
+    if !VALID_STATUSES.contains(&task.status.as_str()) {
+        return Some("status must be one of: todo, in_progress, done, blocked");
+    }
     None
 }
 
@@ -54,14 +65,18 @@ async fn create_task(
     data: web::Data<AppState>,
     task: web::Json<Task>,
 ) -> Result<HttpResponse> {
-    if let Some(msg) = validate_task(&task) {
+    let mut task_inner = task.into_inner();
+    if task_inner.status.is_empty() || !VALID_STATUSES.contains(&task_inner.status.as_str()) {
+        task_inner.status = "todo".to_string();
+    }
+    if let Some(msg) = validate_task(&task_inner) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
     }
     let mut tasks = data.tasks.lock().unwrap();
     let mut next_id = data.next_id.lock().unwrap();
     let new_task = Task {
         id: *next_id,
-        ..task.into_inner()
+        ..task_inner
     };
     *next_id += 1;
     println!("Creating task: {:?}", new_task);
@@ -86,6 +101,30 @@ async fn update_task(
         t.deadline = task.deadline.clone();
         t.project = task.project.clone();
         t.assignee = task.assignee.clone();
+        t.status = task.status.clone();
+        Ok(HttpResponse::Ok().json(t.clone()))
+    } else {
+        Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateStatusRequest {
+    status: String,
+}
+
+async fn update_task_status(
+    data: web::Data<AppState>,
+    path: web::Path<u64>,
+    body: web::Json<UpdateStatusRequest>,
+) -> Result<HttpResponse> {
+    let id = path.into_inner();
+    if !VALID_STATUSES.contains(&body.status.as_str()) {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": "invalid status" })));
+    }
+    let mut tasks = data.tasks.lock().unwrap();
+    if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
+        t.status = body.status.clone();
         Ok(HttpResponse::Ok().json(t.clone()))
     } else {
         Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })))
@@ -191,9 +230,10 @@ Return ONLY a valid JSON array of task objects. Each task must have:
 - "deadline": string or null (YYYY-MM-DD format if date is mentioned, otherwise null)
 - "project": string (default "General")
 - "assignee": string (default "Unassigned" if not specified)
+- "status": string (one of "todo", "in_progress", "done", "blocked"; default "todo")
 
 Example output:
-[{"title":"Review PR #123","description":"Code review for authentication module","tags":["review","urgent"],"deadline":"2025-02-25","project":"Backend","assignee":"Unassigned"}]"#;
+[{"title":"Review PR #123","description":"Code review for authentication module","tags":["review","urgent"],"deadline":"2025-02-25","project":"Backend","assignee":"Unassigned","status":"todo"}]"#;
 
     let user_prompt = format!("Extract tasks from these meeting notes:\n\n{}", notes);
 
@@ -298,6 +338,12 @@ Example output:
             .and_then(|v| v.as_str())
             .unwrap_or("Unassigned")
             .to_string();
+        let status = item
+            .get("status")
+            .and_then(|v| v.as_str())
+            .filter(|s| VALID_STATUSES.contains(s))
+            .unwrap_or("todo")
+            .to_string();
 
         let task = Task {
             id: *next_id,
@@ -307,6 +353,7 @@ Example output:
             deadline: deadline.clone(),
             project: project.clone(),
             assignee: assignee.clone(),
+            status: status.clone(),
         };
 
         if validate_task(&task).is_none() {
@@ -339,6 +386,7 @@ async fn main() -> std::io::Result<()> {
             .route("/tasks", web::post().to(create_task))
             .route("/tasks/generate", web::post().to(generate_tasks_from_ai))
             .route("/tasks/{id}", web::put().to(update_task))
+            .route("/tasks/{id}/status", web::put().to(update_task_status))
             .route("/tasks/{id}", web::delete().to(delete_task))
     })
     .bind("0.0.0.0:8080")?
