@@ -351,7 +351,17 @@ const App: React.FC = () => {
   const assignees = Array.from(new Set(['Unassigned', ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
   const tags = Array.from(new Set(tasks.flatMap(t => t.tags).filter(t => t && t.trim()))).sort();
   const statusLabels = TASK_STATUSES.map(s => s.label);
-  const taskSort = (a: Task, b: Task) => {
+  const STATUS_ORDER = ['todo', 'in_progress', 'blocked', 'done'];
+  const sprintSort = (a: Task, b: Task) => {
+    const aIdx = STATUS_ORDER.indexOf(a.status || 'todo');
+    const bIdx = STATUS_ORDER.indexOf(b.status || 'todo');
+    if (aIdx !== bIdx) return aIdx - bIdx;
+    if (!a.deadline && !b.deadline) return 0;
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return a.deadline.localeCompare(b.deadline);
+  };
+  const backlogSort = (a: Task, b: Task) => {
     if (!a.deadline && !b.deadline) return 0;
     if (!a.deadline) return 1;
     if (!b.deadline) return -1;
@@ -367,8 +377,8 @@ const App: React.FC = () => {
     return projectMatch && assigneeMatch && tagMatch && statusMatch;
   });
 
-  const backlogTasks = filteredTasks.filter(t => !t.in_sprint).sort(taskSort);
-  const sprintTasks = filteredTasks.filter(t => !!t.in_sprint).sort(taskSort);
+  const backlogTasks = filteredTasks.filter(t => !t.in_sprint).sort(backlogSort);
+  const sprintTasks = filteredTasks.filter(t => !!t.in_sprint).sort(sprintSort);
 
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
     e.dataTransfer.setData('taskId', String(taskId));
