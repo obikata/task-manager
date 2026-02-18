@@ -1,5 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+
+interface MultiSelectFilterProps {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (selected: string[]) => void;
+}
+
+const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ label, options, selected, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggle = (opt: string) => {
+    if (selected.includes(opt)) {
+      onChange(selected.filter(s => s !== opt));
+    } else {
+      onChange([...selected, opt]);
+    }
+  };
+
+  const displayText = selected.length === 0 ? 'All' : selected.length <= 2 ? selected.join(', ') : `${selected.length} selected`;
+
+  return (
+    <div className="filter-label" ref={ref}>
+      <span className="filter-label-text">{label}</span>
+      <div className="multi-select">
+        <button type="button" className="multi-select-trigger" onClick={() => setOpen(!open)}>
+          {displayText} ▾
+        </button>
+        {open && (
+          <div className="multi-select-dropdown">
+            {options.map(opt => (
+              <label key={opt} className="multi-select-option">
+                <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 interface Task {
   id: number;
@@ -21,8 +72,9 @@ const App: React.FC = () => {
     project: '',
     assignee: '',
   });
-  const [view, setView] = useState<'all' | 'project'>('all');
-  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [filterProject, setFilterProject] = useState<string[]>([]);
+  const [filterAssignee, setFilterAssignee] = useState<string[]>([]);
+  const [filterTags, setFilterTags] = useState<string[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -73,6 +125,8 @@ const App: React.FC = () => {
     tags = Array.from(new Set(tags)); // unique
     const task = {
       ...newTask,
+      project: newTask.project.trim(),
+      assignee: newTask.assignee.trim(),
       tags,
       deadline: newTask.deadline || undefined,
     };
@@ -86,7 +140,8 @@ const App: React.FC = () => {
         body: JSON.stringify(task),
       });
       if (response.ok) {
-        await fetchTasks();
+        const createdTask = (await response.json()) as Task;
+        setTasks((prev) => [...prev, createdTask]);
         setNewTask({
           title: '',
           description: '',
@@ -153,6 +208,8 @@ const App: React.FC = () => {
         body: JSON.stringify({
           ...editingTask,
           id: taskId,
+          project: (editingTask.project ?? '').trim(),
+          assignee: (editingTask.assignee ?? '').trim(),
           tags: Array.isArray(editingTask.tags) ? editingTask.tags : String(editingTask.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
         }),
       });
@@ -206,8 +263,15 @@ const App: React.FC = () => {
     });
   };
 
-  const projects = Array.from(new Set(tasks.map(task => task.project)));
-  const filteredTasks = view === 'all' ? tasks : tasks.filter(task => task.project === selectedProject);
+  const projects = Array.from(new Set(['General', ...tasks.map(t => t.project).filter(p => p && p.trim())])).sort();
+  const assignees = Array.from(new Set(['Unassigned', ...tasks.map(t => t.assignee).filter(a => a && a.trim())])).sort();
+  const tags = Array.from(new Set(tasks.flatMap(t => t.tags).filter(t => t && t.trim()))).sort();
+  const filteredTasks = tasks.filter(task => {
+    const projectMatch = filterProject.length === 0 || filterProject.includes(task.project);
+    const assigneeMatch = filterAssignee.length === 0 || filterAssignee.includes(task.assignee);
+    const tagMatch = filterTags.length === 0 || filterTags.some(tag => task.tags.includes(tag));
+    return projectMatch && assigneeMatch && tagMatch;
+  });
 
   return (
     <div className={`App ${isDarkMode ? 'dark' : ''}`}>
@@ -228,17 +292,18 @@ const App: React.FC = () => {
           </label>
         </div>
       </div>
-      <div className="view-buttons">
-        <button onClick={() => setView('all')}>All Tasks</button>
-        <button onClick={() => setView('project')}>Project View</button>
-        {view === 'project' && (
-          <select value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
-            <option value="">Select Project</option>
-            {projects.map(project => (
-              <option key={project} value={project}>{project}</option>
-            ))}
-          </select>
-        )}
+      <div className="filter-bar">
+        <MultiSelectFilter label="Project" options={projects} selected={filterProject} onChange={setFilterProject} />
+        <MultiSelectFilter label="Assignee" options={assignees} selected={filterAssignee} onChange={setFilterAssignee} />
+        <MultiSelectFilter label="Tag" options={tags} selected={filterTags} onChange={setFilterTags} />
+        <button
+          type="button"
+          className="filter-reset-btn"
+          onClick={() => { setFilterProject([]); setFilterAssignee([]); setFilterTags([]); }}
+          disabled={filterProject.length === 0 && filterAssignee.length === 0 && filterTags.length === 0}
+        >
+          Reset
+        </button>
       </div>
       <div className="task-form">
         <h2>Add New Task</h2>
@@ -266,18 +331,58 @@ const App: React.FC = () => {
             value={newTask.deadline}
             onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })}
           />
-          <input
-            type="text"
-            placeholder="Project"
-            value={newTask.project}
-            onChange={(e) => setNewTask({ ...newTask, project: e.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Assignee"
-            value={newTask.assignee}
-            onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
-          />
+          <div>
+            <label htmlFor="new-project">Project</label>
+            <select
+              id="new-project"
+              value={projects.includes(newTask.project) ? newTask.project : (newTask.project ? '__new__' : '')}
+              onChange={(e) => {
+                const v = e.target.value;
+                setNewTask({ ...newTask, project: v === '__new__' ? ' ' : v });
+              }}
+            >
+              <option value="">Select project</option>
+              {projects.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+              <option value="__new__">＋新規</option>
+            </select>
+            {(!newTask.project || projects.includes(newTask.project)) ? null : (
+              <input
+                type="text"
+                placeholder="New project name"
+                value={newTask.project}
+                onChange={(e) => setNewTask({ ...newTask, project: e.target.value })}
+                style={{ marginTop: 4 }}
+              />
+            )}
+          </div>
+          <div>
+            <label htmlFor="new-assignee">Assignee</label>
+            <select
+              id="new-assignee"
+              value={assignees.includes(newTask.assignee) ? newTask.assignee : (newTask.assignee ? '__new__' : '')}
+              onChange={(e) => {
+                const v = e.target.value;
+                setNewTask({ ...newTask, assignee: v === '__new__' ? ' ' : v });
+              }}
+            >
+              <option value="">Select assignee</option>
+              {assignees.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+              <option value="__new__">＋新規</option>
+            </select>
+            {(!newTask.assignee || assignees.includes(newTask.assignee)) ? null : (
+              <input
+                type="text"
+                placeholder="New assignee name"
+                value={newTask.assignee}
+                onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
+                style={{ marginTop: 4 }}
+              />
+            )}
+          </div>
           <button type="submit">Add Task</button>
         </form>
       </div>
@@ -292,16 +397,13 @@ const App: React.FC = () => {
         <button onClick={generateTasksFromNotes}>Generate Tasks</button>
       </div>
       <div className="task-list">
-        {view === 'project' && selectedProject === '' && (
-          <p className="empty-state-message">プロジェクトを選択してください</p>
-        )}
         {loading && tasks.length === 0 && (
           <p className="loading-message">読み込み中...</p>
         )}
-        {!loading && view === 'project' && selectedProject !== '' && filteredTasks.length === 0 && (
-          <p className="empty-state-message">このプロジェクトにタスクはありません</p>
+        {!loading && filteredTasks.length === 0 && (
+          <p className="empty-state-message">該当するタスクはありません</p>
         )}
-        {!loading && (view === 'all' || (view === 'project' && selectedProject !== '')) && filteredTasks.map((task) => (
+        {!loading && filteredTasks.length > 0 && filteredTasks.map((task) => (
           <div key={task.id} className="task-card">
             {editingTaskId === task.id && editingTask ? (
               <form onSubmit={(e) => handleUpdateTask(e, task.id)} className="task-edit-form">
@@ -328,18 +430,32 @@ const App: React.FC = () => {
                   value={editingTask.deadline ?? ''}
                   onChange={(e) => setEditingTask({ ...editingTask, deadline: e.target.value || undefined })}
                 />
-                <input
-                  type="text"
-                  placeholder="Project"
-                  value={editingTask.project ?? ''}
-                  onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
-                />
-                <input
-                  type="text"
-                  placeholder="Assignee"
-                  value={editingTask.assignee ?? ''}
-                  onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
-                />
+                <div className="filter-bar" style={{ marginTop: 12, marginBottom: 0 }}>
+                  <label className="filter-label">
+                    <span className="filter-label-text">Project</span>
+                    <select
+                      value={editingTask.project ?? ''}
+                      onChange={(e) => setEditingTask({ ...editingTask, project: e.target.value })}
+                    >
+                      <option value="">All</option>
+                      {Array.from(new Set([...(editingTask.project && !projects.includes(editingTask.project) ? [editingTask.project] : []), ...projects])).sort().map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="filter-label">
+                    <span className="filter-label-text">Assignee</span>
+                    <select
+                      value={editingTask.assignee ?? ''}
+                      onChange={(e) => setEditingTask({ ...editingTask, assignee: e.target.value })}
+                    >
+                      <option value="">All</option>
+                      {Array.from(new Set([...(editingTask.assignee && !assignees.includes(editingTask.assignee) ? [editingTask.assignee] : []), ...assignees])).sort().map((a) => (
+                        <option key={a} value={a}>{a}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
                 <div className="task-card-actions">
                   <button type="submit">Save</button>
                   <button type="button" onClick={() => { setEditingTaskId(null); setEditingTask(null); }}>Cancel</button>
