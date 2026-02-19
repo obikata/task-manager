@@ -23,6 +23,8 @@ struct Task {
     status: String,
     #[serde(default)]
     in_sprint: bool,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 fn default_status() -> String {
@@ -67,7 +69,8 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             project TEXT NOT NULL,
             assignee TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'todo',
-            in_sprint INTEGER NOT NULL DEFAULT 0
+            in_sprint INTEGER NOT NULL DEFAULT 0,
+            notes TEXT DEFAULT ''
         )
         "#,
     )
@@ -94,6 +97,10 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query("PRAGMA busy_timeout=5000")
         .execute(pool)
         .await?;
+
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN notes TEXT DEFAULT ''")
+        .execute(pool)
+        .await;
 
     Ok(())
 }
@@ -255,6 +262,11 @@ fn validate_task(task: &Task) -> Option<&'static str> {
     if task.assignee.trim().is_empty() {
         return Some("assignee must not be empty");
     }
+    if let Some(ref notes) = task.notes {
+        if notes.len() > 2000 {
+            return Some("notes must be at most 2000 characters");
+        }
+    }
     None
 }
 
@@ -276,7 +288,7 @@ async fn assignee_exists(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Er
 
 async fn get_tasks(data: web::Data<AppState>) -> Result<HttpResponse> {
     let rows = sqlx::query_as::<_, TaskRow>(
-        "SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint FROM tasks ORDER BY id",
+        "SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes FROM tasks ORDER BY id",
     )
     .fetch_all(&data.pool)
     .await
@@ -302,6 +314,7 @@ struct TaskRow {
     assignee: String,
     status: String,
     in_sprint: i32,
+    notes: Option<String>,
 }
 
 impl TaskRow {
@@ -321,6 +334,7 @@ impl TaskRow {
             assignee: self.assignee,
             status: self.status,
             in_sprint: self.in_sprint != 0,
+            notes: self.notes.filter(|s| !s.is_empty()),
         })
     }
 }
@@ -354,10 +368,13 @@ async fn create_task(
     let tags_json = serde_json::to_string(&task_inner.tags)
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
+    let notes = task_inner.notes.as_deref().unwrap_or("").trim();
+    let notes_opt = if notes.is_empty() { None } else { Some(notes.to_string()) };
+
     let id = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO tasks (title, description, tags, deadline, project, assignee, status, in_sprint)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        INSERT INTO tasks (title, description, tags, deadline, project, assignee, status, in_sprint, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
         RETURNING id
         "#,
     )
@@ -368,6 +385,7 @@ async fn create_task(
     .bind(&task_inner.project)
     .bind(&task_inner.assignee)
     .bind(&task_inner.status)
+    .bind(notes_opt.as_deref().unwrap_or(""))
     .fetch_one(&data.pool)
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
@@ -404,9 +422,12 @@ async fn update_task(
     let tags_json = serde_json::to_string(&task.tags)
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
+    let notes = task.notes.as_deref().unwrap_or("").trim();
+    let notes_val = if notes.is_empty() { "" } else { notes };
+
     let result = sqlx::query(
         r#"
-        UPDATE tasks SET title=?, description=?, tags=?, deadline=?, project=?, assignee=?, status=?, in_sprint=?
+        UPDATE tasks SET title=?, description=?, tags=?, deadline=?, project=?, assignee=?, status=?, in_sprint=?, notes=?
         WHERE id=?
         "#,
     )
@@ -418,6 +439,7 @@ async fn update_task(
     .bind(&task.assignee)
     .bind(&task.status)
     .bind(if task.in_sprint { 1 } else { 0 })
+    .bind(notes_val)
     .bind(id)
     .execute(&data.pool)
     .await
@@ -456,7 +478,7 @@ async fn update_task_sprint(
         return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
 
-    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint FROM tasks WHERE id=?")
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes FROM tasks WHERE id=?")
         .bind(id)
         .fetch_one(&data.pool)
         .await
@@ -492,7 +514,7 @@ async fn update_task_status(
         return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
 
-    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint FROM tasks WHERE id=?")
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes FROM tasks WHERE id=?")
         .bind(id)
         .fetch_one(&data.pool)
         .await
@@ -736,6 +758,7 @@ Example output:
             assignee: assignee.clone(),
             status: status.clone(),
             in_sprint: false,
+            notes: None,
         };
 
         if validate_task(&task).is_none() {
@@ -743,8 +766,8 @@ Example output:
                 .map_err(actix_web::error::ErrorInternalServerError)?;
             let id = sqlx::query_scalar::<_, i64>(
                 r#"
-                INSERT INTO tasks (title, description, tags, deadline, project, assignee, status, in_sprint)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                INSERT INTO tasks (title, description, tags, deadline, project, assignee, status, in_sprint, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
                 RETURNING id
                 "#,
             )
@@ -755,6 +778,7 @@ Example output:
             .bind(&project)
             .bind(&assignee)
             .bind(&status)
+            .bind("")
             .fetch_one(&data.pool)
             .await
             .map_err(actix_web::error::ErrorInternalServerError)?;
@@ -769,6 +793,7 @@ Example output:
                 assignee,
                 status,
                 in_sprint: false,
+                notes: None,
             });
         }
     }

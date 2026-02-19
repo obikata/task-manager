@@ -78,6 +78,7 @@ interface Task {
   assignee: string;
   status: TaskStatus | string;
   in_sprint?: boolean;
+  notes?: string;
 }
 
 /** Calculate remaining working days until deadline (excludes weekends). */
@@ -114,6 +115,7 @@ const App: React.FC = () => {
     project: '',
     assignee: '',
     status: 'todo' as TaskStatus,
+    notes: '',
   });
   const [filterProject, setFilterProject] = useState<string[]>([]);
   const [filterAssignee, setFilterAssignee] = useState<string[]>([]);
@@ -205,6 +207,7 @@ const App: React.FC = () => {
       tags,
       deadline: newTask.deadline || undefined,
       status: newTask.status || 'todo',
+      notes: newTask.notes.trim() || undefined,
     };
     setError(null);
     try {
@@ -226,6 +229,7 @@ const App: React.FC = () => {
           project: '',
           assignee: '',
           status: 'todo',
+          notes: '',
         });
       } else {
         const text = await response.text();
@@ -283,6 +287,7 @@ const App: React.FC = () => {
           status: editingTask.status ?? 'todo',
           in_sprint: editingTask.in_sprint ?? false,
           tags: Array.isArray(editingTask.tags) ? editingTask.tags : String(editingTask.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
+          notes: (editingTask.notes ?? '').trim() || undefined,
         }),
       });
       if (response.ok) {
@@ -458,6 +463,7 @@ const App: React.FC = () => {
       </div>
       <p>Project: {task.project}</p>
       <p>Assignee: {task.assignee}</p>
+      {task.notes && <p className="task-notes">Memo: {task.notes}</p>}
       <div className="task-card-actions">
         <button type="button" onClick={() => startEditing(task)}>Edit</button>
       </div>
@@ -499,6 +505,15 @@ const App: React.FC = () => {
                 placeholder="Comma separated"
                 value={Array.isArray(editingTask.tags) ? editingTask.tags.join(', ') : ''}
                 onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value.split(',').map(t => t.trim()) })}
+              />
+            </div>
+            <div>
+              <label className="filter-label-text">Memo</label>
+              <textarea
+                placeholder="Optional notes (e.g. why blocked, why done)"
+                value={editingTask.notes ?? ''}
+                onChange={(e) => setEditingTask({ ...editingTask, notes: e.target.value })}
+                rows={2}
               />
             </div>
             <div>
@@ -634,6 +649,16 @@ const App: React.FC = () => {
               placeholder="Comma separated"
               value={newTask.tags}
               onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="new-notes">Memo</label>
+            <textarea
+              id="new-notes"
+              placeholder="Optional notes (e.g. why blocked, why done)"
+              value={newTask.notes}
+              onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
+              rows={2}
             />
           </div>
           <div>

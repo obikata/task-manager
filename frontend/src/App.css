@@ -709,6 +709,16 @@ input:checked + .slider:before {
   color: inherit;
 }
 
+.task-card .task-notes {
+  font-style: italic;
+  color: #555;
+  margin-top: 4px;
+}
+
+.App.dark .task-card .task-notes {
+  color: #999;
+}
+
 .App.dark .task-card .deadline-urgent {
   color: #ff6b6b;
 }
