@@ -1,15 +1,78 @@
 .App {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--app-font, 'Grok', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif);
   background-color: #ffffff;
   color: #14171a;
   min-height: 100vh;
-  padding: 20px;
+  padding: 24px;
   transition: background-color 0.3s, color 0.3s;
 }
 
+/* Center content and limit width for typical web app layout */
+.app-container {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
 .App.dark {
-  background-color: #000000;
+  background-color: #121212;
   color: #ffffff;
+}
+
+.collapsible-section {
+  margin-bottom: 12px;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e1e8ed;
+  border-radius: 12px;
+  background: #f8f9fa;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  text-align: left;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.collapsible-header:hover {
+  background: #eef1f3;
+  border-color: #1da1f2;
+}
+
+.collapsible-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.App.dark .collapsible-header {
+  background: #2a2a2a;
+  border-color: #404040;
+}
+
+.App.dark .collapsible-header:hover {
+  background: #333;
+  border-color: #1da1f2;
+}
+
+.App.dark .collapsible-header h2 {
+  color: #fff;
+}
+
+.collapsible-icon {
+  font-size: 12px;
+  color: #657786;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.collapsible-content {
+  margin-top: 8px;
 }
 
 .task-form {
@@ -22,8 +85,8 @@
 }
 
 .App.dark .task-form {
-  background: #15202b;
-  border-color: #38444d;
+  background: #1e1e1e;
+  border-color: #404040;
   color: #ffffff;
 }
 
@@ -42,9 +105,22 @@ h1 {
   margin: 0;
 }
 
+.task-form label {
+  display: block;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: #666;
+}
+
+.App.dark .task-form label {
+  color: #aaa;
+}
+
 .task-form input,
 .task-form textarea,
 .task-form select {
+  box-sizing: border-box;
   width: 100%;
   padding: 10px;
   margin: 10px 0;
@@ -64,6 +140,94 @@ h1 {
   border-color: #555;
 }
 
+/* Unified placeholder styling */
+.task-form input::placeholder,
+.task-form textarea::placeholder {
+  color: #999;
+  opacity: 1;
+}
+
+.App.dark .task-form input::placeholder,
+.App.dark .task-form textarea::placeholder {
+  color: #888;
+}
+
+.task-edit-form input::placeholder,
+.task-edit-form textarea::placeholder {
+  color: #999;
+  opacity: 1;
+}
+
+.App.dark .task-edit-form input::placeholder,
+.App.dark .task-edit-form textarea::placeholder {
+  color: #888;
+}
+
+/* DatePicker - hide clear button (blue blob and ×) */
+.react-datepicker__close-icon {
+  display: none !important;
+}
+
+/* DatePicker wrapper - full width for form layout */
+.react-datepicker-wrapper {
+  display: block !important;
+  width: 100%;
+}
+
+/* DatePicker input - match form field styling */
+.react-datepicker-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+}
+
+.App.dark .react-datepicker-input {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  border-color: #555;
+}
+
+/* DatePicker popup - use app font (renders in portal outside App) */
+.react-datepicker {
+  font-family: var(--app-font, 'Grok', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui, sans-serif) !important;
+}
+
+/* DatePicker popup dark mode */
+.App.dark .react-datepicker {
+  background: #2a2a2a;
+  border-color: #555;
+}
+
+.App.dark .react-datepicker__header {
+  background: #1e1e1e;
+  border-color: #555;
+}
+
+.App.dark .react-datepicker__current-month,
+.App.dark .react-datepicker__day-name,
+.App.dark .react-datepicker__day {
+  color: #fff;
+}
+
+.App.dark .react-datepicker__day--outside-month {
+  color: #666;
+}
+
+.App.dark .react-datepicker__day:hover {
+  background: #404040;
+}
+
+.App.dark .react-datepicker__day--selected {
+  background: #1da1f2;
+}
+
 .task-form button {
   background-color: #1da1f2;
   color: white;
@@ -79,29 +243,156 @@ h1 {
   background-color: #1991db;
 }
 
-.view-buttons {
+.filter-bar {
+  display: flex;
+  gap: 16px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: flex-end;
 }
 
-.view-buttons button {
-  background-color: #1da1f2;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 20px;
+.filter-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-label-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #657786;
+}
+
+.App.dark .filter-label-text {
+  color: #999;
+}
+
+.filter-bar select {
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+  min-width: 160px;
+  transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+}
+
+.App.dark .filter-bar select {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  border-color: #555;
+}
+
+.multi-select {
+  position: relative;
+}
+
+.multi-select-trigger {
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+  min-width: 160px;
+  text-align: left;
+  transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+}
+
+.multi-select-trigger:hover {
+  border-color: #1da1f2;
+}
+
+.App.dark .multi-select-trigger {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  border-color: #555;
+}
+
+.App.dark .multi-select-trigger:hover {
+  border-color: #1da1f2;
+}
+
+.multi-select-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 180px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 100;
+  padding: 6px 0;
+}
+
+.App.dark .multi-select-dropdown {
+  background: #2a2a2a;
+  border-color: #555;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   cursor: pointer;
   font-size: 14px;
-  margin-right: 10px;
-  font-weight: bold;
+  color: #333;
 }
 
-.view-buttons button:hover {
-  background-color: #1991db;
+.multi-select-option:hover {
+  background: #f5f5f5;
 }
 
-.view-buttons select {
-  padding: 10px;
-  font-size: 16px;
+.App.dark .multi-select-option {
+  color: #fff;
+}
+
+.App.dark .multi-select-option:hover {
+  background: #404040;
+}
+
+.multi-select-option input {
+  cursor: pointer;
+}
+
+.filter-reset-btn {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background-color: #f5f5f5;
+  color: #333;
+  cursor: pointer;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+
+.filter-reset-btn:hover:not(:disabled) {
+  background-color: #e8e8e8;
+}
+
+.filter-reset-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.App.dark .filter-reset-btn {
+  background-color: #2a2a2a;
+  color: #fff;
+  border-color: #555;
+}
+
+.App.dark .filter-reset-btn:hover:not(:disabled) {
+  background-color: #404040;
 }
 
 .toggle-switch {
@@ -149,25 +440,216 @@ input:checked + .slider:before {
   transform: translateX(26px);
 }
 
+.board-container--editing {
+  display: none;
+}
+
+.board-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.edit-modal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.App.dark .edit-modal {
+  background: #1e1e1e;
+  border: 1px solid #404040;
+}
+
+.edit-modal-title {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  color: #333;
+}
+
+.App.dark .edit-modal-title {
+  color: #fff;
+}
+
+.edit-modal .task-edit-form input,
+.edit-modal .task-edit-form textarea {
+  font-size: 16px;
+}
+
+.board-column {
+  min-height: 200px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 2px dashed #ddd;
+  background: #fafafa;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.board-column:hover,
+.board-column.drag-over {
+  border-color: #1da1f2;
+  background: #f0f8ff;
+}
+
+.App.dark .board-column {
+  border-color: #404040;
+  background: #1a1a1a;
+}
+
+.App.dark .board-column:hover,
+.App.dark .board-column.drag-over {
+  border-color: #1da1f2;
+  background: #1a2a3a;
+}
+
+.board-column-title {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: bold;
+  color: #333;
+}
+
+.App.dark .board-column-title {
+  color: #fff;
+}
+
 .task-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  min-height: 100px;
 }
 
 .task-card {
-  background: #ffffff;
-  border: 1px solid #e1e8ed;
-  padding: 15px;
-  border-radius: 16px;
-  margin-bottom: 10px;
+  border: 1px solid;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 0;
   transition: background-color 0.3s, color 0.3s, border-color 0.3s;
 }
 
-.App.dark .task-card {
-  background: #15202b;
-  border-color: #38444d;
+/* Task card colors by status - light mode */
+.task-card.status-todo {
+  background: #f5f5f5;
+  border-color: #e1e8ed;
+  color: #333;
+}
+
+.task-card.status-in_progress {
+  background: #e8f4fd;
+  border-color: #1da1f2;
+  color: #333;
+}
+
+.task-card.status-done {
+  background: #d4edda;
+  border-color: #28a745;
+  color: #333;
+}
+
+.task-card.status-blocked {
+  background: #f8d7da;
+  border-color: #dc3545;
+  color: #333;
+}
+
+/* Task card colors by status - dark mode */
+.App.dark .task-card.status-todo {
+  background: #2a2a2a;
+  border-color: #404040;
   color: #ffffff;
+}
+
+.App.dark .task-card.status-in_progress {
+  background: #1a3a4a;
+  border-color: #1da1f2;
+  color: #ffffff;
+}
+
+.App.dark .task-card.status-done {
+  background: #1e3d2a;
+  border-color: #28a745;
+  color: #ffffff;
+}
+
+.App.dark .task-card.status-blocked {
+  background: #4a2a2a;
+  border-color: #dc3545;
+  color: #ffffff;
+}
+
+.dark-mode-label {
+  font-weight: bold;
+  color: inherit;
+  user-select: none;
+}
+
+.App.dark .dark-mode-label {
+  color: #ffffff;
+}
+
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.task-card-header h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.3;
+  color: #333;
+}
+
+.App.dark .task-card-header h3 {
+  color: #ffffff;
+}
+
+.status-badge,
+.status-select {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+}
+
+.status-select {
+  min-width: 95px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23657786' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 24px;
+}
+
+.App.dark .status-select {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .task-card h3 {
@@ -180,34 +662,172 @@ input:checked + .slider:before {
 }
 
 .task-card p {
-  margin: 5px 0;
+  margin: 2px 0;
+  font-size: 12px;
   color: #666;
 }
 
+
 .App.dark .task-card p {
-  color: #cccccc;
+  color: #b0b0b0;
 }
 
 .task-card .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
+  margin: 2px 0;
 }
 
 .task-card .tag {
   background: #e1e8ed;
-  padding: 2px 8px;
-  border-radius: 12px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
   font-size: 12px;
   color: #657786;
 }
 
 .App.dark .task-card .tag {
-  background: #38444d;
-  color: #8899a6;
+  background: #404040;
+  color: #999999;
 }
 
 .task-card .deadline {
-  color: #dc3545;
   font-weight: bold;
+}
+
+.task-card .deadline-urgent {
+  color: #dc3545;
+}
+
+.task-card .deadline-warning {
+  color: #fd7e14;
+}
+
+.task-card .deadline-default {
+  color: inherit;
+}
+
+.task-card .task-notes {
+  font-style: italic;
+  color: #555;
+  margin-top: 4px;
+}
+
+.App.dark .task-card .task-notes {
+  color: #999;
+}
+
+.App.dark .task-card .deadline-urgent {
+  color: #ff6b6b;
+}
+
+.App.dark .task-card .deadline-warning {
+  color: #ffa94d;
+}
+
+.App.dark .task-card .deadline-default {
+  color: inherit;
+}
+
+.task-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.task-card-actions button {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  background: #1da1f2;
+  color: white;
+}
+
+.task-card-actions .delete-btn {
+  background: #dc3545;
+}
+
+.task-card-actions .delete-btn:hover {
+  background: #c82333;
+}
+
+.task-edit-form .filter-label-text,
+.task-edit-form label {
+  display: block;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: #666;
+}
+
+.App.dark .task-edit-form .filter-label-text,
+.App.dark .task-edit-form label {
+  color: #aaa;
+}
+
+.task-edit-form .filter-label-text:first-child,
+.task-edit-form > div:first-child label {
+  margin-top: 0;
+}
+
+.task-edit-form input,
+.task-edit-form textarea {
+  width: 100%;
+  padding: 10px;
+  margin: 4px 0 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 16px;
+}
+
+.App.dark .task-edit-form input,
+.App.dark .task-edit-form textarea {
+  background: #2a2a2a;
+  color: #fff;
+  border-color: #555;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fee;
+  color: #c00;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #fcc;
+}
+
+.App.dark .error-banner {
+  background: #3d2020;
+  color: #ff6b6b;
+  border-color: #5a3030;
+}
+
+.error-banner button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: inherit;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.loading-message,
+.empty-state-message {
+  color: #666;
+  padding: 24px;
+  text-align: center;
+}
+
+.App.dark .loading-message,
+.App.dark .empty-state-message {
+  color: #999;
 }

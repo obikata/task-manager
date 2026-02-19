@@ -7,9 +7,54 @@ A full-stack task management application with Rust backend and React frontend.
 - Task creation with title, description, tags, deadlines
 - Project-based task organization
 - Organization-wide task views
-- Automatic task generation from meeting notes
+- AI-powered task generation from meeting notes (xAI Grok)
 - Google Account integration
 - Micro-management avoidance through smart automation
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["Client"]
+        Browser["Browser"]
+    end
+
+    subgraph Frontend["Frontend (React + Vite)"]
+        UI["React UI"]
+        Vite["Vite Dev Server"]
+    end
+
+    subgraph Backend["Backend (Rust)"]
+        API["Actix-web API"]
+        DB[(SQLite)]
+    end
+
+    Browser -->|":3000"| Vite
+    Vite --> UI
+    UI -->|"REST /tasks"| API
+    API --> DB
+```
+
+## Prerequisites
+
+### Backend
+
+- **Rust** (1.70+)
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  source $HOME/.cargo/env
+  ```
+
+### Frontend
+
+- **Node.js** (20.19+)
+  ```bash
+  # nvm (recommended)
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+  source ~/.bashrc
+  nvm install 20
+  nvm use 20
+  ```
 
 ## Setup
 
@@ -47,11 +92,65 @@ A full-stack task management application with Rust backend and React frontend.
    npm run dev
    ```
 
+   **For network sharing** (e.g. company LAN): Add `--host` so others can access from their browsers. Set `VITE_API_URL` to your machine's IP so API calls work from their machines:
+   ```
+   VITE_API_URL=http://YOUR_IP:8080 npm run dev -- --host
+   ```
+   Replace `YOUR_IP` with your machine's IP (e.g. `172.19.47.88`). Others can then open `http://YOUR_IP:3000`.
+
 ## Usage
 
-- Backend runs on http://localhost:8080
-- Frontend runs on http://localhost:3000
+- **Backend**: http://localhost:8080 (or http://YOUR_IP:8080 when sharing on network)
+- **Frontend**: http://localhost:3000 (or http://YOUR_IP:3000 when using `--host`)
 
-## Development
+### Environment Variables
 
-This project follows Tesla/SpaceX style rapid iteration development.
+- `VITE_API_URL`: API base URL for the frontend (default: `http://127.0.0.1:8080`). When sharing on a network, set to `http://YOUR_IP:8080` so clients can reach the API. Set in `frontend/.env` or pass when running `npm run dev`.
+- `DATABASE_URL`: SQLite database URL (default: `sqlite:./data/tasks.db`). The `backend/data/` directory is created automatically.
+- `XAI_API_KEY`: xAI API key for AI task generation. Required for the "Generate Tasks from Meeting Notes (AI)" feature. Create a key at [xAI Console](https://console.x.ai/team/default/api-keys) and set it when running the backend:
+  ```bash
+  export XAI_API_KEY="your_api_key_here"
+  cargo run
+  ```
+
+### Managing Projects and Assignees
+
+Projects and assignees are managed via the API. Users can only select from the predefined list when creating or editing tasks. Use `curl` or similar to add new entries.
+
+Replace `http://localhost:8080` with `http://YOUR_IP:8080` when accessing from another machine.
+
+**Add a new project:**
+```bash
+curl -X POST http://localhost:8080/projects \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Backend"}'
+```
+
+**List projects:**
+```bash
+curl http://localhost:8080/projects
+```
+
+**Delete a project** (cannot delete "General", id=1):
+```bash
+curl -X DELETE http://localhost:8080/projects/2
+```
+
+**Add a new assignee:**
+```bash
+curl -X POST http://localhost:8080/assignees \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice"}'
+```
+
+**List assignees:**
+```bash
+curl http://localhost:8080/assignees
+```
+
+**Delete an assignee** (cannot delete "Unassigned", id=1):
+```bash
+curl -X DELETE http://localhost:8080/assignees/2
+```
+
+Tags remain free-form; users can add any tag when creating or editing tasks.
