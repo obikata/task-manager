@@ -7,7 +7,7 @@ A full-stack task management application with Rust backend and React frontend.
 - Task creation with title, description, tags, deadlines
 - Project-based task organization
 - Organization-wide task views
-- AI-powered task generation from meeting notes (xAI Grok)
+- AI-powered task generation from meeting notes (xAI Grok / Google Gemini)
 - Google Account integration
 - Micro-management avoidance through smart automation
 
@@ -107,8 +107,21 @@ flowchart TB
 
 - `VITE_API_URL`: API base URL for the frontend (default: `http://127.0.0.1:8080`). When sharing on a network, set to `http://YOUR_IP:8080` so clients can reach the API. Set in `frontend/.env` or pass when running `npm run dev`.
 - `DATABASE_URL`: SQLite database URL (default: `sqlite:./data/tasks.db`). The `backend/data/` directory is created automatically.
-- `XAI_API_KEY`: xAI API key for AI task generation. Required for the "Generate Tasks from Meeting Notes (AI)" feature. Create a key at [xAI Console](https://console.x.ai/team/default/api-keys) and set it when running the backend:
+- `AI_PROVIDER`: AI provider for task generation. Set to `gemini` (default) or `xai`. Use `gemini` when xAI is unavailable (e.g. corporate networks).
+- `GEMINI_API_KEY`: Google Gemini API key. Required when `AI_PROVIDER=gemini`. Create a key at [Google AI Studio](https://aistudio.google.com/apikey).
+- `GEMINI_MODEL`: Optional. Gemini model name (default: `gemini-2.5-flash`).
+- `XAI_API_KEY`: xAI API key. Required when `AI_PROVIDER=xai`. Create a key at [xAI Console](https://console.x.ai/team/default/api-keys).
+
+  Example (Gemini, recommended for corporate environments):
   ```bash
+  export AI_PROVIDER=gemini
+  export GEMINI_API_KEY="your_gemini_api_key_here"
+  cargo run
+  ```
+
+  Example (xAI):
+  ```bash
+  export AI_PROVIDER=xai
   export XAI_API_KEY="your_api_key_here"
   cargo run
   ```

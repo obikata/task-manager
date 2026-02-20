@@ -6,8 +6,16 @@ use std::path::Path;
 
 const XAI_API_URL: &str = "https://api.x.ai/v1/chat/completions";
 const XAI_MODEL: &str = "grok-3-mini";
+const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const GEMINI_MODEL_DEFAULT: &str = "gemini-2.5-flash";
 
 const VALID_STATUSES: [&str; 4] = ["todo", "in_progress", "done", "blocked"];
+
+#[derive(Clone, Copy, PartialEq)]
+enum AiProvider {
+    Xai,
+    Gemini,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Task {
@@ -547,35 +555,35 @@ struct GenerateTasksRequest {
 }
 
 #[derive(Serialize)]
-struct XaiMessage {
+struct ChatMessage {
     role: String,
     content: String,
 }
 
 #[derive(Serialize)]
-struct XaiChatRequest {
-    model: &'static str,
-    messages: Vec<XaiMessage>,
+struct ChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
 }
 
 #[derive(Deserialize)]
-struct XaiChoice {
-    message: XaiChoiceMessage,
+struct ChatChoice {
+    message: ChatChoiceMessage,
 }
 
 #[derive(Deserialize)]
-struct XaiChoiceMessage {
+struct ChatChoiceMessage {
     content: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct XaiChatResponse {
-    choices: Option<Vec<XaiChoice>>,
-    error: Option<XaiError>,
+struct ChatResponse {
+    choices: Option<Vec<ChatChoice>>,
+    error: Option<ChatError>,
 }
 
 #[derive(Deserialize)]
-struct XaiError {
+struct ChatError {
     message: String,
 }
 
@@ -599,14 +607,41 @@ fn extract_json_from_response(text: &str) -> Option<&str> {
     None
 }
 
+fn resolve_ai_provider() -> (AiProvider, String) {
+    let provider = std::env::var("AI_PROVIDER")
+        .unwrap_or_else(|_| "gemini".to_string())
+        .to_lowercase();
+    let provider = match provider.as_str() {
+        "xai" => AiProvider::Xai,
+        _ => AiProvider::Gemini,
+    };
+    let api_key = match provider {
+        AiProvider::Xai => std::env::var("XAI_API_KEY").unwrap_or_default(),
+        AiProvider::Gemini => std::env::var("GEMINI_API_KEY").unwrap_or_default(),
+    };
+    (provider, api_key)
+}
+
 async fn generate_tasks_from_ai(
     data: web::Data<AppState>,
     body: web::Json<GenerateTasksRequest>,
 ) -> Result<HttpResponse> {
-    let api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
+    let (provider, api_key) = resolve_ai_provider();
+    let (api_url, model) = match provider {
+        AiProvider::Xai => (XAI_API_URL, XAI_MODEL.to_string()),
+        AiProvider::Gemini => (
+            GEMINI_API_URL,
+            std::env::var("GEMINI_MODEL").unwrap_or_else(|_| GEMINI_MODEL_DEFAULT.to_string()),
+        ),
+    };
+
     if api_key.is_empty() {
+        let key_name = match provider {
+            AiProvider::Xai => "XAI_API_KEY",
+            AiProvider::Gemini => "GEMINI_API_KEY",
+        };
         return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
-            "error": "XAI_API_KEY is not configured. Please set the environment variable."
+            "error": format!("{} is not configured. Please set the environment variable.", key_name)
         })));
     }
 
@@ -634,57 +669,68 @@ Example output:
     let user_prompt = format!("Extract tasks from these meeting notes:\n\n{}", notes);
 
     let client = reqwest::Client::new();
-    let xai_req = XaiChatRequest {
-        model: XAI_MODEL,
+    let chat_req = ChatRequest {
+        model,
         messages: vec![
-            XaiMessage {
+            ChatMessage {
                 role: "system".to_string(),
                 content: system_prompt.to_string(),
             },
-            XaiMessage {
+            ChatMessage {
                 role: "user".to_string(),
                 content: user_prompt,
             },
         ],
     };
 
+    let provider_name = match provider {
+        AiProvider::Xai => "xAI",
+        AiProvider::Gemini => "Gemini",
+    };
+
     let resp = client
-        .post(XAI_API_URL)
+        .post(api_url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
-        .json(&xai_req)
+        .json(&chat_req)
         .send()
         .await
         .map_err(|e| {
-            actix_web::error::ErrorInternalServerError(format!("xAI API request failed: {}", e))
+            actix_web::error::ErrorInternalServerError(format!(
+                "{} API request failed: {}",
+                provider_name, e
+            ))
         })?;
 
     let status = resp.status();
     let body_text = resp.text().await.map_err(actix_web::error::ErrorInternalServerError)?;
 
-    let xai_resp: XaiChatResponse = serde_json::from_str(&body_text).unwrap_or(XaiChatResponse {
+    let chat_resp: ChatResponse = serde_json::from_str(&body_text).unwrap_or(ChatResponse {
         choices: None,
-        error: Some(XaiError {
+        error: Some(ChatError {
             message: body_text.clone(),
         }),
     });
 
     if !status.is_success() {
-        let err_msg = xai_resp
+        let err_msg = chat_resp
             .error
             .map(|e| e.message)
-            .unwrap_or_else(|| format!("xAI API error: {} - {}", status, body_text));
+            .unwrap_or_else(|| format!("{} API error: {} - {}", provider_name, status, body_text));
         return Ok(HttpResponse::BadGateway().json(serde_json::json!({
             "error": err_msg
         })));
     }
 
-    let content = xai_resp
+    let content = chat_resp
         .choices
         .and_then(|c| c.into_iter().next())
         .and_then(|c| c.message.content)
         .ok_or_else(|| {
-            actix_web::error::ErrorInternalServerError("No content in xAI response")
+            actix_web::error::ErrorInternalServerError(format!(
+                "No content in {} response",
+                provider_name
+            ))
         })?;
 
     let json_str = extract_json_from_response(&content).unwrap_or(content.as_str());
