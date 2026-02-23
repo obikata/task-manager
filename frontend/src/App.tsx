@@ -139,6 +139,14 @@ const App: React.FC = () => {
   const [openAiGenerate, setOpenAiGenerate] = useState(false);
   const [projects, setProjects] = useState<{ id: number; name: string }[]>([]);
   const [assignees, setAssignees] = useState<{ id: number; name: string }[]>([]);
+  const [sprintDoneCollapsed, setSprintDoneCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('sprintDoneCollapsed');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080';
 
@@ -147,6 +155,14 @@ const App: React.FC = () => {
     fetchProjects();
     fetchAssignees();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sprintDoneCollapsed', JSON.stringify(sprintDoneCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [sprintDoneCollapsed]);
 
   const fetchProjects = async () => {
     try {
@@ -414,6 +430,8 @@ const App: React.FC = () => {
 
   const backlogTasks = filteredTasks.filter(t => !t.in_sprint).sort(backlogSort);
   const sprintTasks = filteredTasks.filter(t => !!t.in_sprint).sort(sprintSort);
+  const sprintActiveTasks = sprintTasks.filter(t => (t.status || 'todo') !== 'done');
+  const sprintDoneTasks = sprintTasks.filter(t => (t.status || 'todo') === 'done');
 
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
     e.dataTransfer.setData('taskId', String(taskId));
@@ -753,9 +771,31 @@ const App: React.FC = () => {
           onDragOver={handleDragOver}
           onDrop={(e) => handleDrop(e, true)}
         >
-          <h3 className="board-column-title">Sprint</h3>
+          <div className="board-column-header">
+            <h3 className="board-column-title">Sprint</h3>
+            {sprintDoneTasks.length > 0 && (
+              <button
+                type="button"
+                className="sprint-done-toggle"
+                onClick={() => setSprintDoneCollapsed((prev) => !prev)}
+                title={sprintDoneCollapsed ? 'DONEを表示' : 'DONEを折りたたむ'}
+              >
+                DONE {sprintDoneCollapsed ? `(${sprintDoneTasks.length}) ▶` : '▼'}
+              </button>
+            )}
+          </div>
           <div className="task-list">
-            {!loading && sprintTasks.map((task) => renderTaskCard(task))}
+            {!loading && sprintActiveTasks.map((task) => renderTaskCard(task))}
+            {!loading && !sprintDoneCollapsed && sprintDoneTasks.map((task) => renderTaskCard(task))}
+            {!loading && sprintDoneCollapsed && sprintDoneTasks.length > 0 && (
+              <button
+                type="button"
+                className="sprint-done-summary"
+                onClick={() => setSprintDoneCollapsed(false)}
+              >
+                DONE ({sprintDoneTasks.length}) 件を表示
+              </button>
+            )}
           </div>
         </div>
         <div
@@ -763,7 +803,9 @@ const App: React.FC = () => {
           onDragOver={handleDragOver}
           onDrop={(e) => handleDrop(e, false)}
         >
-          <h3 className="board-column-title">Backlog</h3>
+          <div className="board-column-header">
+            <h3 className="board-column-title">Backlog</h3>
+          </div>
           <div className="task-list">
             {loading && tasks.length === 0 && (
               <p className="loading-message">Loading...</p>
