@@ -495,6 +495,8 @@ const App: React.FC = () => {
       className={`task-card status-${task.status || 'todo'}`}
       draggable
       onDragStart={(e) => handleDragStart(e, task.id)}
+      onDoubleClick={() => startEditing(task)}
+      title="Double-click to edit"
     >
       <div className="task-card-header">
         <h3>{task.title}</h3>
@@ -519,9 +521,6 @@ const App: React.FC = () => {
       <p>Project: {task.project}</p>
       <p>Assignee: {task.assignee}</p>
       {task.notes && <p className="task-notes">Memo: {task.notes}</p>}
-      <div className="task-card-actions">
-        <button type="button" onClick={() => startEditing(task)}>Edit</button>
-      </div>
     </div>
   );
 
@@ -885,7 +884,12 @@ const App: React.FC = () => {
             ) : (
               <div className="task-list archives-task-list">
                 {archivedTasks.map((task) => (
-                  <div key={task.id} className={`task-card task-card-archived status-${task.status || 'todo'}`}>
+                  <div
+                    key={task.id}
+                    className={`task-card task-card-archived status-${task.status || 'todo'}`}
+                    onDoubleClick={() => startEditing(task)}
+                    title="Double-click to edit"
+                  >
                     <div className="task-card-header">
                       <h3>{task.title}</h3>
                       <button
@@ -907,9 +911,6 @@ const App: React.FC = () => {
                     <p>Project: {task.project}</p>
                     <p>Assignee: {task.assignee}</p>
                     {task.notes && <p className="task-notes">Memo: {task.notes}</p>}
-                    <div className="task-card-actions">
-                      <button type="button" onClick={() => startEditing(task)}>Edit</button>
-                    </div>
                   </div>
                 ))}
               </div>
