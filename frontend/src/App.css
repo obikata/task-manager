@@ -519,8 +519,50 @@ input:checked + .slider:before {
   background: #1a2a3a;
 }
 
+.board-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.board-column-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sprint-archive-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #28a745;
+  background: #d4edda;
+  color: #155724;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.sprint-archive-btn:hover {
+  background: #c3e6cb;
+  border-color: #1e7e34;
+}
+
+.App.dark .sprint-archive-btn {
+  border-color: #28a745;
+  background: #1e3d24;
+  color: #90ee90;
+}
+
+.App.dark .sprint-archive-btn:hover {
+  background: #2a4d30;
+  border-color: #34c759;
+}
+
 .board-column-title {
-  margin: 0 0 16px 0;
+  margin: 0;
   font-size: 18px;
   font-weight: bold;
   color: #333;
@@ -528,6 +570,101 @@ input:checked + .slider:before {
 
 .App.dark .board-column-title {
   color: #fff;
+}
+
+.sprint-done-toggle {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  color: #666;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.sprint-done-toggle:hover {
+  background: #eee;
+  border-color: #ccc;
+}
+
+.App.dark .sprint-done-toggle {
+  border-color: #404040;
+  background: #2a2a2a;
+  color: #aaa;
+}
+
+.App.dark .sprint-done-toggle:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.sprint-done-summary {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px dashed #ccc;
+  background: #f9f9f9;
+  color: #666;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.sprint-done-summary:hover {
+  background: #eee;
+  border-color: #999;
+}
+
+.App.dark .sprint-done-summary {
+  border-color: #404040;
+  background: #252525;
+  color: #aaa;
+}
+
+.App.dark .sprint-done-summary:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.archives-content {
+  margin-top: 8px;
+}
+
+.archives-task-list {
+  margin-top: 12px;
+}
+
+.task-card-archived {
+  opacity: 0.9;
+}
+
+.restore-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #1da1f2;
+  background: #e8f4fd;
+  color: #0c5a8c;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.restore-btn:hover {
+  background: #cce7fd;
+  border-color: #1da1f2;
+}
+
+.App.dark .restore-btn {
+  border-color: #1da1f2;
+  background: #1a2a3a;
+  color: #7dd3fc;
+}
+
+.App.dark .restore-btn:hover {
+  background: #243a4a;
+  border-color: #38bdf8;
 }
 
 .task-list {

@@ -33,6 +33,8 @@ struct Task {
     in_sprint: bool,
     #[serde(default)]
     notes: Option<String>,
+    #[serde(default)]
+    archived: bool,
 }
 
 fn default_status() -> String {
@@ -107,6 +109,10 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await?;
 
     let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN notes TEXT DEFAULT ''")
+        .execute(pool)
+        .await;
+
+    let _ = sqlx::query("ALTER TABLE tasks ADD COLUMN archived INTEGER DEFAULT 0")
         .execute(pool)
         .await;
 
@@ -296,7 +302,7 @@ async fn assignee_exists(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Er
 
 async fn get_tasks(data: web::Data<AppState>) -> Result<HttpResponse> {
     let rows = sqlx::query_as::<_, TaskRow>(
-        "SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes FROM tasks ORDER BY id",
+        "SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes, archived FROM tasks ORDER BY id",
     )
     .fetch_all(&data.pool)
     .await
@@ -323,6 +329,7 @@ struct TaskRow {
     status: String,
     in_sprint: i32,
     notes: Option<String>,
+    archived: Option<i32>,
 }
 
 impl TaskRow {
@@ -343,6 +350,7 @@ impl TaskRow {
             status: self.status,
             in_sprint: self.in_sprint != 0,
             notes: self.notes.filter(|s| !s.is_empty()),
+            archived: self.archived.unwrap_or(0) != 0,
         })
     }
 }
@@ -357,6 +365,7 @@ async fn create_task(
         task_inner.status = "todo".to_string();
     }
     task_inner.in_sprint = false;
+    task_inner.archived = false;
     if let Some(msg) = validate_task(&task_inner) {
         return Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": msg })));
     }
@@ -435,7 +444,7 @@ async fn update_task(
 
     let result = sqlx::query(
         r#"
-        UPDATE tasks SET title=?, description=?, tags=?, deadline=?, project=?, assignee=?, status=?, in_sprint=?, notes=?
+        UPDATE tasks SET title=?, description=?, tags=?, deadline=?, project=?, assignee=?, status=?, in_sprint=?, notes=?, archived=?
         WHERE id=?
         "#,
     )
@@ -448,6 +457,7 @@ async fn update_task(
     .bind(&task.status)
     .bind(if task.in_sprint { 1 } else { 0 })
     .bind(notes_val)
+    .bind(if task.archived { 1 } else { 0 })
     .bind(id)
     .execute(&data.pool)
     .await
@@ -486,7 +496,7 @@ async fn update_task_sprint(
         return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
 
-    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes FROM tasks WHERE id=?")
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes, archived FROM tasks WHERE id=?")
         .bind(id)
         .fetch_one(&data.pool)
         .await
@@ -522,7 +532,43 @@ async fn update_task_status(
         return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
     }
 
-    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes FROM tasks WHERE id=?")
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes, archived FROM tasks WHERE id=?")
+        .bind(id)
+        .fetch_one(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let task = row.into_task().map_err(actix_web::error::ErrorInternalServerError)?;
+    Ok(HttpResponse::Ok().json(task))
+}
+
+async fn archive_done_in_sprint(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let result = sqlx::query(
+        "UPDATE tasks SET archived=1, in_sprint=0 WHERE in_sprint=1 AND status='done'",
+    )
+    .execute(&data.pool)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "archived": result.rows_affected() })))
+}
+
+async fn unarchive_task(
+    data: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let id = path.into_inner();
+    let result = sqlx::query("UPDATE tasks SET archived=0 WHERE id=?")
+        .bind(id)
+        .execute(&data.pool)
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    if result.rows_affected() == 0 {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({ "error": "task not found" })));
+    }
+
+    let row = sqlx::query_as::<_, TaskRow>("SELECT id, title, description, tags, deadline, project, assignee, status, in_sprint, notes, archived FROM tasks WHERE id=?")
         .bind(id)
         .fetch_one(&data.pool)
         .await
@@ -805,6 +851,7 @@ Example output:
             status: status.clone(),
             in_sprint: false,
             notes: None,
+            archived: false,
         };
 
         if validate_task(&task).is_none() {
@@ -840,6 +887,7 @@ Example output:
                 status,
                 in_sprint: false,
                 notes: None,
+                archived: false,
             });
         }
     }
@@ -905,6 +953,8 @@ async fn main() -> std::io::Result<()> {
             .route("/tasks/{id}", web::put().to(update_task))
             .route("/tasks/{id}/status", web::put().to(update_task_status))
             .route("/tasks/{id}/sprint", web::put().to(update_task_sprint))
+            .route("/tasks/archive-done-in-sprint", web::post().to(archive_done_in_sprint))
+            .route("/tasks/{id}/unarchive", web::put().to(unarchive_task))
             .route("/tasks/{id}", web::delete().to(delete_task))
     })
     .bind("0.0.0.0:8080")?

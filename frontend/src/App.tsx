@@ -79,6 +79,7 @@ interface Task {
   status: TaskStatus | string;
   in_sprint?: boolean;
   notes?: string;
+  archived?: boolean;
 }
 
 /** Calculate remaining working days until deadline (excludes weekends). */
@@ -139,6 +140,15 @@ const App: React.FC = () => {
   const [openAiGenerate, setOpenAiGenerate] = useState(false);
   const [projects, setProjects] = useState<{ id: number; name: string }[]>([]);
   const [assignees, setAssignees] = useState<{ id: number; name: string }[]>([]);
+  const [sprintDoneCollapsed, setSprintDoneCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('sprintDoneCollapsed');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+  const [openArchives, setOpenArchives] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080';
 
@@ -147,6 +157,14 @@ const App: React.FC = () => {
     fetchProjects();
     fetchAssignees();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sprintDoneCollapsed', JSON.stringify(sprintDoneCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [sprintDoneCollapsed]);
 
   const fetchProjects = async () => {
     try {
@@ -288,6 +306,7 @@ const App: React.FC = () => {
           in_sprint: editingTask.in_sprint ?? false,
           tags: Array.isArray(editingTask.tags) ? editingTask.tags : String(editingTask.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
           notes: (editingTask.notes ?? '').trim() || undefined,
+          archived: editingTask.archived ?? false,
         }),
       });
       if (response.ok) {
@@ -362,6 +381,39 @@ const App: React.FC = () => {
     }
   };
 
+  const handleArchiveDoneInSprint = async () => {
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/tasks/archive-done-in-sprint`, { method: 'POST' });
+      if (response.ok) {
+        await fetchTasks();
+        setSprintDoneCollapsed(true);
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error((errData as { error?: string })?.error || `Failed to archive: ${response.status}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to archive';
+      setError(msg);
+    }
+  };
+
+  const handleUnarchive = async (taskId: number) => {
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/unarchive`, { method: 'PUT' });
+      if (response.ok) {
+        await fetchTasks();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error((errData as { error?: string })?.error || `Failed to restore: ${response.status}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to restore';
+      setError(msg);
+    }
+  };
+
   const startEditing = (task: Task) => {
     setEditingTaskId(task.id);
     setEditingTask({
@@ -412,8 +464,11 @@ const App: React.FC = () => {
     return projectMatch && assigneeMatch && tagMatch && statusMatch;
   });
 
-  const backlogTasks = filteredTasks.filter(t => !t.in_sprint).sort(backlogSort);
-  const sprintTasks = filteredTasks.filter(t => !!t.in_sprint).sort(sprintSort);
+  const backlogTasks = filteredTasks.filter(t => !t.in_sprint && !t.archived).sort(backlogSort);
+  const sprintTasks = filteredTasks.filter(t => !!t.in_sprint && !t.archived).sort(sprintSort);
+  const sprintActiveTasks = sprintTasks.filter(t => (t.status || 'todo') !== 'done');
+  const sprintDoneTasks = sprintTasks.filter(t => (t.status || 'todo') === 'done');
+  const archivedTasks = filteredTasks.filter(t => !!t.archived).sort((a, b) => (b.id - a.id));
 
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
     e.dataTransfer.setData('taskId', String(taskId));
@@ -440,6 +495,8 @@ const App: React.FC = () => {
       className={`task-card status-${task.status || 'todo'}`}
       draggable
       onDragStart={(e) => handleDragStart(e, task.id)}
+      onDoubleClick={() => startEditing(task)}
+      title="Double-click to edit"
     >
       <div className="task-card-header">
         <h3>{task.title}</h3>
@@ -464,9 +521,6 @@ const App: React.FC = () => {
       <p>Project: {task.project}</p>
       <p>Assignee: {task.assignee}</p>
       {task.notes && <p className="task-notes">Memo: {task.notes}</p>}
-      <div className="task-card-actions">
-        <button type="button" onClick={() => startEditing(task)}>Edit</button>
-      </div>
     </div>
   );
 
@@ -753,9 +807,45 @@ const App: React.FC = () => {
           onDragOver={handleDragOver}
           onDrop={(e) => handleDrop(e, true)}
         >
-          <h3 className="board-column-title">Sprint</h3>
+          <div className="board-column-header">
+            <h3 className="board-column-title">Sprint</h3>
+            <div className="board-column-header-actions">
+              {sprintDoneTasks.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className="sprint-done-toggle"
+                    onClick={() => setSprintDoneCollapsed((prev) => !prev)}
+                    title={sprintDoneCollapsed ? 'DONEを表示' : 'DONEを折りたたむ'}
+                  >
+                    DONE {sprintDoneCollapsed ? `(${sprintDoneTasks.length}) ▶` : '▼'}
+                  </button>
+                  {!sprintDoneCollapsed && (
+                    <button
+                      type="button"
+                      className="sprint-archive-btn"
+                      onClick={handleArchiveDoneInSprint}
+                      title="DONEタスクをARCHIVESに転送"
+                    >
+                      ARCHIVESに転送
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
           <div className="task-list">
-            {!loading && sprintTasks.map((task) => renderTaskCard(task))}
+            {!loading && sprintActiveTasks.map((task) => renderTaskCard(task))}
+            {!loading && !sprintDoneCollapsed && sprintDoneTasks.map((task) => renderTaskCard(task))}
+            {!loading && sprintDoneCollapsed && sprintDoneTasks.length > 0 && (
+              <button
+                type="button"
+                className="sprint-done-summary"
+                onClick={() => setSprintDoneCollapsed(false)}
+              >
+                DONE ({sprintDoneTasks.length}) 件を表示
+              </button>
+            )}
           </div>
         </div>
         <div
@@ -763,7 +853,9 @@ const App: React.FC = () => {
           onDragOver={handleDragOver}
           onDrop={(e) => handleDrop(e, false)}
         >
-          <h3 className="board-column-title">Backlog</h3>
+          <div className="board-column-header">
+            <h3 className="board-column-title">Backlog</h3>
+          </div>
           <div className="task-list">
             {loading && tasks.length === 0 && (
               <p className="loading-message">Loading...</p>
@@ -774,6 +866,57 @@ const App: React.FC = () => {
             {!loading && backlogTasks.map((task) => renderTaskCard(task))}
           </div>
         </div>
+      </div>
+      <div className="collapsible-section">
+        <button
+          type="button"
+          className="collapsible-header"
+          onClick={() => setOpenArchives((prev) => !prev)}
+          aria-expanded={openArchives}
+        >
+          <h2>ARCHIVES {archivedTasks.length > 0 && `(${archivedTasks.length})`}</h2>
+          <span className="collapsible-icon">{openArchives ? '▼' : '▶'}</span>
+        </button>
+        {openArchives && (
+          <div className="archives-content collapsible-content">
+            {archivedTasks.length === 0 ? (
+              <p className="empty-state-message">No archived tasks</p>
+            ) : (
+              <div className="task-list archives-task-list">
+                {archivedTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className={`task-card task-card-archived status-${task.status || 'todo'}`}
+                    onDoubleClick={() => startEditing(task)}
+                    title="Double-click to edit"
+                  >
+                    <div className="task-card-header">
+                      <h3>{task.title}</h3>
+                      <button
+                        type="button"
+                        className="restore-btn"
+                        onClick={() => handleUnarchive(task.id)}
+                        title="Restore to Backlog"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                    {task.deadline && <p className={`task-deadline ${getDeadlineClassName(task.deadline)}`}>Deadline: {task.deadline}</p>}
+                    <p className="task-description">{task.description}</p>
+                    <div className="tags">
+                      {task.tags.map((tag) => (
+                        <span key={`${task.id}-${tag}`} className="tag">{tag}</span>
+                      ))}
+                    </div>
+                    <p>Project: {task.project}</p>
+                    <p>Assignee: {task.assignee}</p>
+                    {task.notes && <p className="task-notes">Memo: {task.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       </div>
     </div>
